@@ -1,11 +1,12 @@
 import os
 import re
 from fastapi import FastAPI, HTTPException
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from telethon import TelegramClient, errors
 from telethon.sessions import StringSession
+from fastapi.staticfiles import StaticFiles
 
+# Env vars from Render
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
@@ -22,9 +23,6 @@ class LookupRequest(BaseModel):
     number: str
 
 app = FastAPI(title="TrueCaller Query API")
-
-# serve static files (frontend)
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
 
 async def ensure_client_started():
     if not TELEGRAM_READY:
@@ -58,6 +56,7 @@ def parse_truecaller_reply(text: str):
     out["raw"] = text
     return out
 
+# ✅ API routes pehle define karo
 @app.post("/lookup")
 async def lookup(req: LookupRequest):
     if not TELEGRAM_READY:
@@ -82,3 +81,6 @@ async def lookup(req: LookupRequest):
 @app.get("/health")
 async def health():
     return {"ok": True}
+
+# ✅ Static frontend last me mount karo
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
