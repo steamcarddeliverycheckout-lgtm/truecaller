@@ -56,7 +56,7 @@ def parse_truecaller_reply(text: str):
     out["raw"] = text
     return out
 
-# ✅ API routes pehle define karo
+# ✅ API endpoint
 @app.post("/lookup")
 async def lookup(req: LookupRequest):
     if not TELEGRAM_READY:
@@ -68,19 +68,32 @@ async def lookup(req: LookupRequest):
         await ensure_client_started()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
     try:
         async with client.conversation(TRUECALLER_BOT, timeout=TIMEOUT_SECONDS) as conv:
             await conv.send_message(number)
-            resp = await conv.get_response()
-            text = resp.text or ""
+            responses = []
+            for _ in range(3):  # max 3 replies collect
+                try:
+                    resp = await conv.get_response()
+                    if resp.text:
+                        responses.append(resp.text)
+                except Exception:
+                    break
+            if not responses:
+                raise HTTPException(status_code=502, detail="No reply from bot.")
+            full_text = "\n\n".join(responses)
     except errors.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    parsed = parse_truecaller_reply(text)
-    return {"ok": True, "data": parsed}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+
+    parsed = parse_truecaller_reply(full_text)
+    return {"ok": True, "data": parsed, "raw": full_text}
 
 @app.get("/health")
 async def health():
     return {"ok": True}
 
-# ✅ Static frontend last me mount karo
+# ✅ Static frontend serve last
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
