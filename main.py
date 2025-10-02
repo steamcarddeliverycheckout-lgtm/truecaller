@@ -10,7 +10,7 @@ from fastapi.staticfiles import StaticFiles
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
-TRUECALLER_BOT = "TrueCaller1Bot"
+TRUECALLER_BOT = "TruecallerR0Bot"   # ✅ new bot
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 if not (API_ID and API_HASH and STRING_SESSION):
@@ -22,7 +22,7 @@ else:
 class LookupRequest(BaseModel):
     number: str
 
-app = FastAPI(title="TrueCaller Query API")
+app = FastAPI(title="TrueCallerR0 Proxy")
 
 async def ensure_client_started():
     if not TELEGRAM_READY:
@@ -35,28 +35,27 @@ async def ensure_client_started():
 def parse_truecaller_reply(text: str):
     out = {}
     s = text.replace("\r\n", "\n")
-    m = re.search(r"Number:\s*([+\d\- ]+)", s)
+
+    # Number
+    m = re.search(r"📞 Number:\s*([+\d\- ]+)", s)
     if m: out["number"] = m.group(1).strip()
-    m = re.search(r"Country:\s*(.+)", s)
+
+    # Country
+    m = re.search(r"🌎 Country:\s*(.+)", s)
     if m: out["country"] = m.group(1).strip()
-    m = re.search(r"TrueCaller Says:([\s\S]*?)(?:Unknown Says:|$)", s)
-    if m:
-        tc = m.group(1)
-        name = re.search(r"Name:\s*(.+)", tc)
-        carrier = re.search(r"Carrier:\s*(.+)", tc)
-        if name: out.setdefault("truecaller", {})["name"] = name.group(1).strip()
-        if carrier: out.setdefault("truecaller", {})["carrier"] = carrier.group(1).strip()
-    m = re.search(r"Unknown Says:([\s\S]*?)(?:$)", s)
-    if m:
-        un = m.group(1)
-        name = re.search(r"Name:\s*(.+)", un)
-        email = re.search(r"Email:\s*([\w\.-]+@[\w\.-]+)", un)
-        if name: out.setdefault("unknown", {})["name"] = name.group(1).strip()
-        if email: out.setdefault("unknown", {})["email"] = email.group(1).strip()
+
+    # Paid section
+    if "💎 Paid sources data:" in s:
+        out["paid"] = "Locked / Subscribe required"
+
+    # Free sources names
+    free_names = re.findall(r"👤 Name:\s*(.+)", s)
+    if free_names:
+        out["free_sources"] = free_names
+
     out["raw"] = text
     return out
 
-# ✅ API endpoint
 @app.post("/lookup")
 async def lookup(req: LookupRequest):
     if not TELEGRAM_READY:
@@ -73,7 +72,7 @@ async def lookup(req: LookupRequest):
         async with client.conversation(TRUECALLER_BOT, timeout=TIMEOUT_SECONDS) as conv:
             await conv.send_message(number)
             responses = []
-            for _ in range(3):  # max 3 replies collect
+            for _ in range(3):
                 try:
                     resp = await conv.get_response()
                     if resp.text:
@@ -95,5 +94,5 @@ async def lookup(req: LookupRequest):
 async def health():
     return {"ok": True}
 
-# ✅ Static frontend serve last
+# Serve frontend
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
