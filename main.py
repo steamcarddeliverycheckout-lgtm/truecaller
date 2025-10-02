@@ -6,11 +6,11 @@ from telethon import TelegramClient, errors
 from telethon.sessions import StringSession
 from fastapi.staticfiles import StaticFiles
 
-# Env vars from Render
+# Env vars
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
-TRUECALLER_BOT = "TruecallerR0Bot"   # ✅ new bot
+TRUECALLER_BOT = "TruecallerR0Bot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 if not (API_ID and API_HASH and STRING_SESSION):
@@ -35,27 +35,19 @@ async def ensure_client_started():
 def parse_truecaller_reply(text: str):
     out = {}
     s = text.replace("\r\n", "\n")
-
-    # Number
     m = re.search(r"📞 Number:\s*([+\d\- ]+)", s)
     if m: out["number"] = m.group(1).strip()
-
-    # Country
     m = re.search(r"🌎 Country:\s*(.+)", s)
     if m: out["country"] = m.group(1).strip()
-
-    # Paid section
     if "💎 Paid sources data:" in s:
         out["paid"] = "Locked / Subscribe required"
-
-    # Free sources names
     free_names = re.findall(r"👤 Name:\s*(.+)", s)
     if free_names:
         out["free_sources"] = free_names
-
     out["raw"] = text
     return out
 
+# ✅ API pehle define karo
 @app.post("/lookup")
 async def lookup(req: LookupRequest):
     if not TELEGRAM_READY:
@@ -63,6 +55,7 @@ async def lookup(req: LookupRequest):
     number = req.number.strip()
     if not re.match(r"^\+?\d{6,15}$", re.sub(r"[ \-()]", "", number)):
         raise HTTPException(status_code=400, detail="Invalid phone number format.")
+
     try:
         await ensure_client_started()
     except Exception as e:
@@ -94,5 +87,5 @@ async def lookup(req: LookupRequest):
 async def health():
     return {"ok": True}
 
-# Serve frontend
+# ✅ Static serve last me rakho
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
