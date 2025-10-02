@@ -4,15 +4,27 @@
   <meta charset="UTF-8">
   <title>TrueCaller Lookup</title>
   <style>
-    body { font-family: Arial, sans-serif; margin: 40px; }
+    body { font-family: Arial, sans-serif; margin: 40px; background: #f2f6fa; }
     h1 { color: #0077cc; }
-    input, button { padding: 10px; margin: 5px; }
-    #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    input, button {
+      padding: 10px;
+      margin: 5px;
+      font-size: 16px;
+    }
+    button {
+      background: #0077cc;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover { background: #005fa3; }
+    #result { margin-top: 20px; padding: 15px; border: 1px solid #ccc; background: #fff; }
     pre { background: #f8f8f8; padding: 10px; }
   </style>
 </head>
 <body>
   <h1>🔍 TrueCaller Lookup</h1>
+  <p>Enter a number with country code (e.g. +923001234567)</p>
   <input id="number" type="text" placeholder="+923xxxxxxxxx" size="20">
   <button onclick="lookup()">Search</button>
 
@@ -21,23 +33,26 @@
   <script>
     async function lookup() {
       const num = document.getElementById("number").value.trim();
-      if (!num) return alert("Enter a number!");
-      document.getElementById("result").innerHTML = "Searching...";
+      if (!num) {
+        alert("Enter a number!");
+        return;
+      }
+      document.getElementById("result").innerHTML = "⏳ Searching...";
       try {
-        const res = await fetch("/lookup", {
+        const res = await fetch(window.location.origin + "/lookup", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ number: num })
         });
         const data = await res.json();
-        if (!data.ok) {
-          document.getElementById("result").innerHTML = "Error: " + JSON.stringify(data);
-          return;
+        if (data.ok) {
+          document.getElementById("result").innerHTML =
+            "<h3>Result:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>";
+        } else {
+          document.getElementById("result").innerHTML = "❌ Error: " + JSON.stringify(data);
         }
-        document.getElementById("result").innerHTML =
-          "<h3>Result:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>";
       } catch (err) {
-        document.getElementById("result").innerHTML = "Failed: " + err;
+        document.getElementById("result").innerHTML = "❌ Failed: " + err;
       }
     }
   </script>
