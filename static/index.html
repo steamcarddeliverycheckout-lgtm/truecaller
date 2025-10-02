@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="UTF-8">
-  <title>TrueCaller Lookup</title>
+  <title>TrueCallerR0 Lookup</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 40px; background: #f2f6fa; }
     h1 { color: #0077cc; }
@@ -23,7 +23,7 @@
   </style>
 </head>
 <body>
-  <h1>🔍 TrueCaller Lookup</h1>
+  <h1>🔍 TrueCallerR0 Lookup</h1>
   <p>Enter a number with country code (e.g. +923001234567)</p>
   <input id="number" type="text" placeholder="+923xxxxxxxxx" size="20">
   <button onclick="lookup()">Search</button>
@@ -46,9 +46,21 @@
         });
         const data = await res.json();
         if (data.ok) {
-          document.getElementById("result").innerHTML =
-            "<h3>Parsed:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>" +
-            "<h3>Raw Bot Reply:</h3><pre>" + data.raw + "</pre>";
+          let html = "<h3>Parsed:</h3>";
+          html += "<p><b>Number:</b> " + (data.data.number || "-") + "</p>";
+          html += "<p><b>Country:</b> " + (data.data.country || "-") + "</p>";
+          if (data.data.paid) {
+            html += "<p><b>Paid sources:</b> " + data.data.paid + "</p>";
+          }
+          if (data.data.free_sources) {
+            html += "<p><b>Free sources names:</b></p><ul>";
+            data.data.free_sources.forEach(n => {
+              html += "<li>" + n + "</li>";
+            });
+            html += "</ul>";
+          }
+          html += "<h3>Raw Bot Reply:</h3><pre>" + data.raw + "</pre>";
+          document.getElementById("result").innerHTML = html;
         } else {
           document.getElementById("result").innerHTML = "❌ Error: " + JSON.stringify(data);
         }
