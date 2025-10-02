@@ -47,7 +47,8 @@
         const data = await res.json();
         if (data.ok) {
           document.getElementById("result").innerHTML =
-            "<h3>Result:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>";
+            "<h3>Parsed:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>" +
+            "<h3>Raw Bot Reply:</h3><pre>" + data.raw + "</pre>";
         } else {
           document.getElementById("result").innerHTML = "❌ Error: " + JSON.stringify(data);
         }
