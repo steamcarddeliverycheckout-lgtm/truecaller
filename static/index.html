@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>TrueCaller Lookup</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 40px; }
+    h1 { color: #0077cc; }
+    input, button { padding: 10px; margin: 5px; }
+    #result { margin-top: 20px; padding: 10px; border: 1px solid #ccc; }
+    pre { background: #f8f8f8; padding: 10px; }
+  </style>
+</head>
+<body>
+  <h1>🔍 TrueCaller Lookup</h1>
+  <input id="number" type="text" placeholder="+923xxxxxxxxx" size="20">
+  <button onclick="lookup()">Search</button>
+
+  <div id="result"></div>
+
+  <script>
+    async function lookup() {
+      const num = document.getElementById("number").value.trim();
+      if (!num) return alert("Enter a number!");
+      document.getElementById("result").innerHTML = "Searching...";
+      try {
+        const res = await fetch("/lookup", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ number: num })
+        });
+        const data = await res.json();
+        if (!data.ok) {
+          document.getElementById("result").innerHTML = "Error: " + JSON.stringify(data);
+          return;
+        }
+        document.getElementById("result").innerHTML =
+          "<h3>Result:</h3><pre>" + JSON.stringify(data.data, null, 2) + "</pre>";
+      } catch (err) {
+        document.getElementById("result").innerHTML = "Failed: " + err;
+      }
+    }
+  </script>
+</body>
+</html>
