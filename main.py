@@ -17,7 +17,7 @@ STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
 # Target bots
 TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
-JACK_CHECKER_BOT = "Jackthe_ripper_bot"
+SECOND_CC_BOT = "Jackthe_ripper_bot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 # ----------------------------
@@ -44,9 +44,9 @@ class CCCheckRequest(BaseModel):
 
 class AdvancedCCRequest(BaseModel):
     card: str
-    checker: str  # 'checker1' or 'checker2'
-    gate_category: str  # 'auth', 'charge', 'killer'
-    gate_provider: str  # provider name based on checker
+    checker: str  # 'first' or 'second'
+    gate_category: str  # 'auth' | 'charge' | 'killer'
+    gate_provider: str  # provider code per checker/category
 
 async def ensure_client_started():
     if not TELEGRAM_READY:
@@ -171,6 +171,74 @@ def is_final_cc_result(text: str) -> bool:
         "✅", "❌"
     ]
     return any(k in text for k in indicators_any)
+
+async def perform_cc_check(bot_username: str, command: str):
+    """Send a command to the given bot and wait for a final response using robust strategy."""
+    await ensure_client_started()
+    bot = await client.get_entity(bot_username)
+
+    collected: list[str] = []
+    seen = set()
+
+    def push(text: str):
+        if text and text not in seen:
+            collected.append(text)
+            seen.add(text)
+
+    final_text = ""
+    loop = asyncio.get_running_loop()
+
+    async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 30) as conv:
+        await conv.send_message(command)
+
+        # Phase 1: conversation response queue (up to ~18s)
+        phase1_deadline = loop.time() + 18
+        while loop.time() < phase1_deadline:
+            try:
+                msg = await asyncio.wait_for(conv.get_response(), timeout=4)
+                text = extract_message_text(msg)
+                if text:
+                    push(text)
+                    if is_final_cc_result(text):
+                        final_text = text
+                        break
+            except asyncio.TimeoutError:
+                continue
+            except Exception:
+                break
+
+        # Phase 2: poll chat for edited/new messages (up to ~22s)
+        if not final_text:
+            poll_deadline = loop.time() + 22
+            while loop.time() < poll_deadline:
+                try:
+                    async for m in client.iter_messages(bot, limit=8):
+                        t = extract_message_text(m)
+                        if t:
+                            push(t)
+                            if is_final_cc_result(t):
+                                final_text = t
+                                break
+                    if final_text:
+                        break
+                    await asyncio.sleep(2)
+                except Exception:
+                    await asyncio.sleep(2)
+
+    if not collected:
+        raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+    if not final_text:
+        # fallback to the latest non-processing message if available
+        for text in reversed(collected):
+            if not is_processing_message(text):
+                final_text = text
+                break
+        if not final_text:
+            final_text = collected[-1]
+
+    cleaned_text = clean_cc_response(final_text)
+    return cleaned_text, final_text, len(collected)
 
 # ----------------------------
 # /lookup endpoint
@@ -337,131 +405,83 @@ async def cc_check(req: CCCheckRequest):
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
 
 # ----------------------------
-# /cc-check-advanced endpoint (Two checkers)
+# /cc-check-advanced endpoint (two checkers, selectable gates)
 # ----------------------------
 @app.post("/cc-check-advanced")
 async def cc_check_advanced(req: AdvancedCCRequest):
     if not TELEGRAM_READY:
         raise HTTPException(status_code=500, detail="Telegram not configured.")
 
-    # Validate card format
+    # Validate card format (number|month|year|cvv)
     card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
     if not re.match(card_pattern, req.card.strip()):
         raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
 
-    checker = req.checker.lower()
-    category = req.gate_category.lower()
-    provider = req.gate_provider.lower()
+    checker = req.checker.strip().lower()
+    category = req.gate_category.strip().lower()
+    provider = req.gate_provider.strip().lower()
 
-    # Determine bot and command
-    bot_username = None
-    command = None
-    
-    if checker == "checker1":
-        bot_username = CC_CHECKER_BOT
-        if category == "auth":
-            if provider == "stripe":
-                command = f"/st {req.card.strip()}"
-            elif provider == "braintree":
-                command = f"/ba {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Auth")
-        elif category == "charge":
-            if provider == "paypal":
-                command = f"/pp {req.card.strip()}"
-            elif provider == "shopify":
-                command = f"/sp {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Charge")
-        elif category == "killer":
-            command = f"/kd {req.card.strip()}"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid category for Checker 1")
-    
-    elif checker == "checker2":
-        bot_username = JACK_CHECKER_BOT
-        if category == "auth":
-            if provider == "braintree":
-                command = f"/br {req.card.strip()}"
-            elif provider == "stripe":
-                command = f"/chk {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Auth")
-        elif category == "charge":
-            if provider == "braintree":
-                command = f"/ch {req.card.strip()}"
-            elif provider == "stripe":
-                command = f"/sk {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Charge")
-        else:
-            raise HTTPException(status_code=400, detail="Checker 2 does not support Killer gate")
+    # Checker 1 (first): niggacheck_bot
+    checker1_maps = {
+        "auth": {
+            "stripe": "/st",
+            "braintree": "/ba",
+        },
+        "charge": {
+            "paypal": "/pp",
+            "shopify": "/sp",
+        },
+        "killer": {
+            # If any killer gates exist in first checker later
+        },
+    }
+
+    # Checker 2 (second): Jackthe_ripper_bot
+    checker2_maps = {
+        "auth": {
+            # user-specified: braintree => /br, stripe => /chk
+            "braintree": "/br",
+            "stripe": "/chk",
+        },
+        "charge": {
+            # user-specified: braintree => /ch, stripe => /sk
+            "braintree": "/ch",
+            "stripe": "/sk",
+        },
+        "killer": {
+            # user-specified: cc killer => /kd
+            "killer": "/kd",
+        },
+    }
+
+    if checker not in ("first", "second"):
+        raise HTTPException(status_code=400, detail="checker must be 'first' or 'second'")
+    if category not in ("auth", "charge", "killer"):
+        raise HTTPException(status_code=400, detail="gate_category must be 'auth', 'charge' or 'killer'")
+
+    maps = checker1_maps if checker == "first" else checker2_maps
+    bot_username = CC_CHECKER_BOT if checker == "first" else SECOND_CC_BOT
+
+    # Provider mapping rules
+    category_map = maps.get(category, {})
+    if category == "killer":
+        # second checker expects provider 'killer' only for /kd
+        cmd = category_map.get(provider)
+        if not cmd:
+            raise HTTPException(status_code=400, detail="Invalid killer provider for selected checker")
     else:
-        raise HTTPException(status_code=400, detail="Invalid checker. Use checker1 or checker2")
+        cmd = category_map.get(provider)
+        if not cmd:
+            valid = ", ".join(category_map.keys()) or "none"
+            raise HTTPException(status_code=400, detail=f"Invalid provider for {category}. Valid: {valid}")
+
+    command = f"{cmd} {req.card.strip()}"
 
     try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        bot = await client.get_entity(bot_username)
-
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20) as conv:
-            await conv.send_message(command)
-            
-            all_messages = []
-            final_text = ""
-            
-            # Phase 1: Wait for messages
-            phase1_deadline = asyncio.get_event_loop().time() + 15
-            while asyncio.get_event_loop().time() < phase1_deadline:
-                try:
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
-                    text = extract_message_text(getattr(msg, 'message', msg))
-                    if text:
-                        all_messages.append(text)
-                        if is_final_cc_result(text):
-                            final_text = text
-                            break
-                except asyncio.TimeoutError:
-                    continue
-                except Exception:
-                    break
-
-            # Phase 2: Poll recent messages if needed
-            if not final_text:
-                poll_deadline = asyncio.get_event_loop().time() + 20
-                while asyncio.get_event_loop().time() < poll_deadline:
-                    try:
-                        async for m in client.iter_messages(bot, limit=5):
-                            t = extract_message_text(m)
-                            if t and t not in all_messages:
-                                all_messages.append(t)
-                            if is_final_cc_result(t):
-                                final_text = t
-                                break
-                        if final_text:
-                            break
-                        await asyncio.sleep(2)
-                    except Exception:
-                        await asyncio.sleep(2)
-
-        if not all_messages:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
-
-        if not final_text:
-            for msg in reversed(all_messages):
-                if not is_processing_message(msg):
-                    final_text = msg
-                    break
-            if not final_text:
-                final_text = all_messages[-1]
-        
-        cleaned_text = clean_cc_response(final_text)
-        
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
-
+        cleaned, full, total = await perform_cc_check(bot_username=bot_username, command=command)
+        return {"ok": True, "raw": cleaned, "full_response": full, "messages": total}
+    except HTTPException:
+        raise
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
     except errors.FloodWaitError as e:
