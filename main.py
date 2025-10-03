@@ -97,22 +97,43 @@ def parse_sbot_reply(text: str):
 # ----------------------------
 def clean_cc_response(text: str):
     """Extract only the important parts from CC checker response"""
+    if not text:
+        return ""
+    
     lines = text.split('\n')
     important_lines = []
     
+    # Skip lines to exclude
+    skip_keywords = ['🔄', 'Processing', '⚡', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot']
+    
+    # Lines to keep
+    keep_keywords = ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 
+                     'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:',
+                     'APPROVED', 'DECLINED', 'CHARGED', 'CVV', 'LIVE', 
+                     '✅', '❌', '🌠', '💳', '🔥']
+    
     for line in lines:
         line = line.strip()
-        # Skip empty lines, processing messages, and unwanted info
+        
+        # Skip empty lines
         if not line:
             continue
-        if any(skip in line for skip in ['🔄', 'Processing', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by']):
+            
+        # Skip unwanted lines
+        if any(skip in line for skip in skip_keywords):
             continue
         
-        # Keep only: Card, Gateway, Response, Info, Issuer, Country, and status emojis
-        if any(keep in line for keep in ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:', 'APPROVED', 'DECLINED', 'CHARGED', '✅', '❌', '🌠']):
+        # Keep important lines or lines with status indicators
+        if any(keep in line for keep in keep_keywords):
+            important_lines.append(line)
+        # Also keep separator lines
+        elif line.startswith('━'):
             important_lines.append(line)
     
-    return '\n'.join(important_lines)
+    result = '\n'.join(important_lines)
+    
+    # If cleaning removed everything, return original
+    return result if result else text
 
 # ----------------------------
 # /lookup endpoint
@@ -213,31 +234,29 @@ async def cc_check(req: CCCheckRequest):
             # Send the command to the bot
             await conv.send_message(command)
             
-            texts = []
-            # Collect all messages from bot (usually processing + result)
+            all_messages = []
+            # Collect all messages from bot (processing + result)
             for i in range(5):
                 try:
                     timeout = TIMEOUT_SECONDS if i == 0 else 5
                     msg = await asyncio.wait_for(conv.get_response(), timeout=timeout)
                     if msg.text:
-                        # Skip processing messages
-                        if "Processing" not in msg.text and "🔄" not in msg.text:
-                            texts.append(msg.text)
+                        all_messages.append(msg.text)
                 except asyncio.TimeoutError:
                     break
                 except Exception:
                     break
 
-        if not texts:
+        if not all_messages:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
 
-        # Get the last message (final result)
-        full_text = texts[-1] if texts else ""
+        # Get the last message (final result) - skip processing messages
+        final_text = all_messages[-1] if all_messages else ""
         
         # Clean the response - remove unwanted parts
-        cleaned_text = clean_cc_response(full_text)
+        cleaned_text = clean_cc_response(final_text)
         
-        return {"ok": True, "raw": cleaned_text}
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
