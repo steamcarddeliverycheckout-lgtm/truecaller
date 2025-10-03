@@ -108,34 +108,28 @@ async def lookup(req: LookupRequest):
         # Resolve bot entity (more robust)
         bot = await client.get_entity(TRUECALLER_BOT)
 
-        # Send the number to the bot
-        sent = await client.send_message(bot, req.number.strip())
-
-        # Wait for first incoming message from that bot (correct method: wait_for)
-        first_event = await client.wait_for(
-            events.NewMessage(chats=bot, incoming=True),
-            timeout=TIMEOUT_SECONDS,
-        )
-
-        texts = []
-        t0 = getattr(first_event, "raw_text", None) or first_event.message.message or ""
-        if t0:
-            texts.append(t0)
-
-        # Collect up to 2 quick follow-ups (bots sometimes split replies)
-        for _ in range(2):
-            try:
-                ev = await client.wait_for(
-                    events.NewMessage(chats=bot, incoming=True),
-                    timeout=2
-                )
-                t = getattr(ev, "raw_text", None) or ev.message.message or ""
-                if t:
-                    texts.append(t)
-            except asyncio.TimeoutError:
-                break
-            except Exception:
-                break
+        # Use conversation to wait for bot replies
+        async with client.conversation(bot, timeout=TIMEOUT_SECONDS) as conv:
+            # Send the number to the bot
+            await conv.send_message(req.number.strip())
+            
+            # Get the first reply
+            response = await conv.get_response()
+            
+            texts = []
+            if response.text:
+                texts.append(response.text)
+            
+            # Collect up to 2 quick follow-ups (bots sometimes split replies)
+            for _ in range(2):
+                try:
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=2)
+                    if msg.text:
+                        texts.append(msg.text)
+                except asyncio.TimeoutError:
+                    break
+                except Exception:
+                    break
 
         if not texts:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
