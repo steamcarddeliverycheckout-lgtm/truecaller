@@ -350,17 +350,24 @@
       `;
       
       try {
-        const response = await fetch(window.location.origin + "/cc-check", {
+        const response = await fetch("/cc-check", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
           body: JSON.stringify({ 
             card: cardInput,
             gate_type: gateType
           })
         });
-        
-        const data = await response.json();
-        
+
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          showResult("Server response (not JSON):\n" + text, "error");
+          return;
+        }
+
         if (data.ok && data.raw) {
           showResult(data.raw, "success");
         } else if (data.ok && data.full_response) {
@@ -417,15 +424,22 @@
       `;
 
       try {
-        const response = await fetch(window.location.origin + "/cc-check-batch", {
+        const response = await fetch("/cc-check-batch", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
           body: JSON.stringify({ 
             cards: lines,
             gate_type: gateType
           })
         });
-        const data = await response.json();
+        const text = await response.text();
+        let data;
+        try {
+          data = JSON.parse(text);
+        } catch (e) {
+          showResult("Server response (not JSON):\n" + text, "error");
+          return;
+        }
 
         if (data.ok && Array.isArray(data.results)) {
           let html = '<div class=\"result-title\">✅ Batch Results</div>';
