@@ -1,342 +1,456 @@
-import os
-import re
-import asyncio
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from fastapi.staticfiles import StaticFiles
-from telethon import TelegramClient, errors, events
-from telethon.sessions import StringSession
-
-# ----------------------------
-# Config (Render ENV)
-# ----------------------------
-API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
-API_HASH = os.environ.get("TELEGRAM_API_HASH")
-STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
-
-# Target bots
-TRUECALLER_BOT = "Truecaller_sbot"
-CC_CHECKER_BOT = "niggacheck_bot"
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
-
-# ----------------------------
-# Telegram Client
-# ----------------------------
-if not (API_ID and API_HASH and STRING_SESSION):
-    TELEGRAM_READY = False
-    client = None
-else:
-    TELEGRAM_READY = True
-    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-
-# ----------------------------
-# FastAPI app
-# ----------------------------
-app = FastAPI(title="Truecaller_sbot Proxy API")
-
-class LookupRequest(BaseModel):
-    number: str
-
-class CCCheckRequest(BaseModel):
-    card: str
-    gate_type: str  # 'stripe', 'braintree', 'paypal', 'shopify'
-
-async def ensure_client_started():
-    if not TELEGRAM_READY:
-        raise RuntimeError("Telegram credentials/session missing.")
-    if not client.is_connected():
-        await client.connect()
-    if not await client.is_user_authorized():
-        raise RuntimeError("Telegram session not authorized. Recreate STRING_SESSION.")
-
-# ----------------------------
-# Parser for @Truecaller_sbot
-# Example:
-# ✅ Truecaller Details Revealed.!!
-# ━━━━━━━━━━━━━━━━━━━━━━
-# 📱  Carrier: Not Found
-# 🌍 Country: Not Found
-# 🌐 International Format: Not Found
-# 📞 Local Format: Not Found
-# 📍 Location: Not Found
-# 🕒 Timezones: Not Found
-# 🔍 Truecaller Name: usman pasha
-# 👤 Username: No name found
-# 🔎 Number search: 3
-# ----------------------------
-def parse_sbot_reply(text: str):
-    s = text.replace("\r\n", "\n")
-    out = {}
-
-    def pick(pattern, cast=None):
-        m = re.search(pattern, s, flags=re.IGNORECASE)
-        if not m:
-            return None
-        val = m.group(1).strip()
-        if cast:
-            try:
-                return cast(val)
-            except Exception:
-                return val
-        return val
-
-    out["carrier"] = pick(r"📱\s*Carrier:\s*(.+)")
-    out["country"] = pick(r"🌍\s*Country:\s*(.+)")
-    out["international_format"] = pick(r"🌐\s*International\s*Format:\s*(.+)")
-    out["local_format"] = pick(r"📞\s*Local\s*Format:\s*(.+)")
-    out["location"] = pick(r"📍\s*Location:\s*(.+)")
-    out["timezones"] = pick(r"🕒\s*Timezones?:\s*(.+)")
-    out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
-    out["username"] = pick(r"👤\s*Username:\s*(.+)")
-    out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
-    out["raw"] = text
-    return out
-
-# ----------------------------
-# Parser for CC checker bot response
-# ----------------------------
-def clean_cc_response(text: str):
-    """Extract only the important parts from CC checker response"""
-    if not text:
-        return ""
-    
-    lines = text.split('\n')
-    important_lines = []
-    
-    # Skip lines to exclude
-    skip_keywords = ['🔄', 'Processing', '⚡', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot']
-    
-    # Lines to keep
-    keep_keywords = ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 
-                     'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:',
-                     'APPROVED', 'DECLINED', 'CHARGED', 'CVV', 'LIVE', 
-                     '✅', '❌', '🌠', '💳', '🔥']
-    
-    for line in lines:
-        line = line.strip()
-        
-        # Skip empty lines
-        if not line:
-            continue
-            
-        # Skip unwanted lines
-        if any(skip in line for skip in skip_keywords):
-            continue
-        
-        # Keep important lines or lines with status indicators
-        if any(keep in line for keep in keep_keywords):
-            important_lines.append(line)
-        # Also keep separator lines
-        elif line.startswith('━'):
-            important_lines.append(line)
-    
-    result = '\n'.join(important_lines)
-    
-    # If cleaning removed everything, return original
-    return result if result else text
-
-# ----------------------------
-# Helpers for CC checker flow
-# ----------------------------
-def extract_message_text(msg):
-    """Safely extract textual content from a Telethon Message (message or caption)."""
-    if not msg:
-        return ""
-    return getattr(msg, "raw_text", None) or getattr(msg, "message", None) or getattr(msg, "text", None) or ""
-
-def is_processing_message(text: str) -> bool:
-    if not text:
-        return False
-    s = text.lower()
-    return ("processing" in s) or ("🔄" in text) or ("loading" in s) or ("working" in s)
-
-def is_final_cc_result(text: str) -> bool:
-    """Heuristic to detect when a CC checker reply is a final result, not a progress update."""
-    if not text:
-        return False
-    if is_processing_message(text):
-        return False
-    # Common indicators the result is finalized
-    indicators_any = [
-        "𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:", "Response:", "APPROVED", "DECLINED", "CHARGED",
-        "𝗖𝗮𝗿𝗱:", "Card:", "𝐆𝐚𝐭𝐞𝐰𝐚𝐲:", "Gateway:",
-        "Issuer:", "𝐈𝐬𝐬𝐮𝐞𝐫:", "Country:", "𝐂𝐨𝐮𝐧𝐭𝐫𝐲:", "CVV", "LIVE", "DEAD",
-        "✅", "❌"
-    ]
-    return any(k in text for k in indicators_any)
-
-# ----------------------------
-# /lookup endpoint
-# ----------------------------
-@app.post("/lookup")
-async def lookup(req: LookupRequest):
-    if not TELEGRAM_READY:
-        raise HTTPException(status_code=500, detail="Telegram not configured.")
-
-    cleaned = re.sub(r"[ \-()]", "", req.number.strip())
-    if not re.match(r"^\+?\d{6,15}$", cleaned):
-        raise HTTPException(status_code=400, detail="Invalid phone number format.")
-
-    try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        # Resolve bot entity (more robust)
-        bot = await client.get_entity(TRUECALLER_BOT)
-
-        # Use conversation to wait for bot replies
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS) as conv:
-            # Send the number to the bot
-            await conv.send_message(req.number.strip())
-            
-            # Get the first reply
-            response = await conv.get_response()
-            
-            texts = []
-            if response.text:
-                texts.append(response.text)
-            
-            # Collect up to 2 quick follow-ups (bots sometimes split replies)
-            for _ in range(2):
-                try:
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=2)
-                    if msg.text:
-                        texts.append(msg.text)
-                except asyncio.TimeoutError:
-                    break
-                except Exception:
-                    break
-
-        if not texts:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
-
-        full_text = "\n\n".join(texts)
-
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    except errors.FloodWaitError as e:
-        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
-
-    parsed = parse_sbot_reply(full_text)
-    return {"ok": True, "data": parsed, "raw": full_text}
-
-# ----------------------------
-# /cc-check endpoint
-# ----------------------------
-@app.post("/cc-check")
-async def cc_check(req: CCCheckRequest):
-    if not TELEGRAM_READY:
-        raise HTTPException(status_code=500, detail="Telegram not configured.")
-
-    # Validate card format (number|month|year|cvv)
-    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
-    if not re.match(card_pattern, req.card.strip()):
-        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
-
-    # Map gate type to command
-    gate_commands = {
-        "stripe": "/st",
-        "braintree": "/ba",
-        "paypal": "/pp",
-        "shopify": "/sp"
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>CC Checker - Gate Validator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
     }
     
-    if req.gate_type not in gate_commands:
-        raise HTTPException(status_code=400, detail="Invalid gate type. Use: stripe, braintree, paypal, or shopify")
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+    }
     
-    command = f"{gate_commands[req.gate_type]} {req.card.strip()}"
+    .container {
+      max-width: 900px;
+      width: 100%;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+      padding: 40px;
+      backdrop-filter: blur(10px);
+    }
+    
+    h1 {
+      text-align: center;
+      color: #667eea;
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      font-weight: 700;
+    }
+    
+    .subtitle {
+      text-align: center;
+      color: #666;
+      margin-bottom: 30px;
+      font-size: 1.1em;
+    }
+    
+    .input-section {
+      margin-bottom: 30px;
+    }
+    
+    .input-label {
+      display: block;
+      margin-bottom: 10px;
+      color: #333;
+      font-weight: 600;
+      font-size: 1.1em;
+    }
+    
+    .card-input, .cards-textarea {
+      width: 100%;
+      padding: 15px 20px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      font-size: 16px;
+      transition: all 0.3s ease;
+      font-family: monospace;
+    }
+    
+    .card-input:focus {
+      outline: none;
+      border-color: #667eea;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .cards-textarea {
+      min-height: 120px;
+      resize: vertical;
+    }
+    
+    .gates-container {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+      margin-bottom: 30px;
+    }
+    
+    .gate-section {
+      background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+      border-radius: 15px;
+      padding: 25px;
+      box-shadow: 0 5px 15px rgba(0, 0, 0, 0.1);
+    }
+    
+    .gate-title {
+      font-size: 1.3em;
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 15px;
+      text-align: center;
+      padding-bottom: 10px;
+      border-bottom: 2px solid rgba(102, 126, 234, 0.3);
+    }
+    
+    .gate-buttons {
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    
+    .gate-btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 12px;
+      font-size: 16px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+      color: white;
+      position: relative;
+      overflow: hidden;
+    }
+    
+    .gate-btn:before {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      width: 0;
+      height: 0;
+      border-radius: 50%;
+      background: rgba(255, 255, 255, 0.3);
+      transform: translate(-50%, -50%);
+      transition: width 0.6s, height 0.6s;
+    }
+    
+    .gate-btn:hover:before {
+      width: 300px;
+      height: 300px;
+    }
+    
+    .gate-btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    }
+    
+    .gate-btn:active {
+      transform: translateY(0);
+    }
+    
+    .stripe-btn {
+      background: linear-gradient(135deg, #6772e5 0%, #5469d4 100%);
+    }
+    
+    .braintree-btn {
+      background: linear-gradient(135deg, #00c9a7 0%, #00a88f 100%);
+    }
+    
+    .paypal-btn {
+      background: linear-gradient(135deg, #0070ba 0%, #005ea6 100%);
+    }
+    
+    .shopify-btn {
+      background: linear-gradient(135deg, #95bf47 0%, #7ab800 100%);
+    }
+    
+    #result {
+      margin-top: 25px;
+      padding: 20px;
+      border-radius: 12px;
+      background: #f8f9fa;
+      border-left: 4px solid #667eea;
+      display: none;
+    }
+    
+    #result.show {
+      display: block;
+      animation: slideIn 0.3s ease;
+    }
+    
+    @keyframes slideIn {
+      from {
+        opacity: 0;
+        transform: translateY(-10px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .result-title {
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 10px;
+      font-size: 1.2em;
+    }
+    
+    .result-content {
+      background: white;
+      padding: 15px;
+      border-radius: 8px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: 'Courier New', monospace;
+      font-size: 14px;
+      line-height: 1.6;
+      color: #333;
+      max-height: 400px;
+      overflow-y: auto;
+    }
+    
+    .loading {
+      text-align: center;
+      color: #667eea;
+      font-size: 1.2em;
+      padding: 20px;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 20px auto;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .error {
+      background: #fee;
+      border-left-color: #f44336;
+      color: #d32f2f;
+    }
+    
+    .success {
+      background: #e8f5e9;
+      border-left-color: #4caf50;
+    }
+    
+    @media (max-width: 768px) {
+      .gates-container {
+        grid-template-columns: 1fr;
+      }
+      
+      .container {
+        padding: 25px;
+      }
+      
+      h1 {
+        font-size: 2em;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>💳 CC Gate Checker</h1>
+    <p class="subtitle">Validate credit cards through multiple payment gates</p>
+    
+    <div class="input-section">
+      <label class="input-label">Enter Card Details (single):</label>
+      <input 
+        id="cardInput" 
+        type="text" 
+        class="card-input" 
+        placeholder="5333499418581618|03|29|232"
+        autocomplete="off"
+      >
+      <small style="color: #666; margin-top: 5px; display: block;">Format: card_number|month|year|cvv</small>
+    </div>
+    
+    <div class="input-section">
+      <label class="input-label">Enter Multiple Cards (one per line):</label>
+      <textarea id="cardsTextarea" class="cards-textarea" placeholder="5333499418581618|03|29|232\n4556737586899855|05|2028|123\n..."></textarea>
+      <small style="color: #666; margin-top: 5px; display: block;">We'll process them sequentially and return per-card results.</small>
+    </div>
+    
+    <div class="gates-container">
+      <div class="gate-section">
+        <div class="gate-title">🔐 Auth Gate</div>
+        <div class="gate-buttons">
+          <button class="gate-btn stripe-btn" onclick="checkCard('stripe')">
+            <span>Stripe Auth</span>
+          </button>
+          <button class="gate-btn braintree-btn" onclick="checkCard('braintree')">
+            <span>Braintree Auth</span>
+          </button>
+          <button class="gate-btn stripe-btn" onclick="checkCardsBatch('stripe')">
+            <span>Stripe Auth (Batch)</span>
+          </button>
+          <button class="gate-btn braintree-btn" onclick="checkCardsBatch('braintree')">
+            <span>Braintree Auth (Batch)</span>
+          </button>
+        </div>
+      </div>
+      
+      <div class="gate-section">
+        <div class="gate-title">💰 Charge Gate</div>
+        <div class="gate-buttons">
+          <button class="gate-btn paypal-btn" onclick="checkCard('paypal')">
+            <span>PayPal Charge</span>
+          </button>
+          <button class="gate-btn shopify-btn" onclick="checkCard('shopify')">
+            <span>Shopify Charge</span>
+          </button>
+          <button class="gate-btn paypal-btn" onclick="checkCardsBatch('paypal')">
+            <span>PayPal Charge (Batch)</span>
+          </button>
+          <button class="gate-btn shopify-btn" onclick="checkCardsBatch('shopify')">
+            <span>Shopify Charge (Batch)</span>
+          </button>
+        </div>
+      </div>
+    </div>
+    
+    <div id="result"></div>
+  </div>
 
-    try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        # Resolve bot entity
-        bot = await client.get_entity(CC_CHECKER_BOT)
-
-        # Use conversation to wait for bot replies
-        # Some bots edit their messages in-place, so we will poll the latest
-        # messages from the bot dialog if needed to detect a final result.
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20) as conv:
-            # Send the command to the bot
-            await conv.send_message(command)
-            
-            all_messages = []
-            final_text = ""
-            
-            # Phase 1: Wait up to 15s for a non-processing message via conversation queue
-            phase1_deadline = asyncio.get_event_loop().time() + 15
-            while asyncio.get_event_loop().time() < phase1_deadline:
-                try:
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
-                    text = extract_message_text(getattr(msg, 'message', msg))
-                    if text:
-                        all_messages.append(text)
-                        if is_final_cc_result(text):
-                            final_text = text
-                            break
-                except asyncio.TimeoutError:
-                    # keep trying in loop until deadline
-                    continue
-                except Exception:
-                    break
-
-            # Phase 2: If still not final, poll recent messages from the bot chat
-            # Some bots edit messages or send outside the conversation queue
-            if not final_text:
-                poll_deadline = asyncio.get_event_loop().time() + 20
-                while asyncio.get_event_loop().time() < poll_deadline:
-                    try:
-                        async for m in client.iter_messages(bot, limit=5):
-                            t = extract_message_text(m)
-                            if t and t not in all_messages:
-                                all_messages.append(t)
-                            if is_final_cc_result(t):
-                                final_text = t
-                                break
-                        if final_text:
-                            break
-                        await asyncio.sleep(2)
-                    except Exception:
-                        await asyncio.sleep(2)
-
-        if not all_messages:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
-
-        if not final_text:
-            # As a fallback, pick the last non-processing message if any
-            for msg in reversed(all_messages):
-                if not is_processing_message(msg):
-                    final_text = msg
-                    break
-            if not final_text:
-                final_text = all_messages[-1]
+  <script>
+    async function checkCard(gateType) {
+      const cardInput = document.getElementById("cardInput").value.trim();
+      const resultDiv = document.getElementById("result");
+      
+      if (!cardInput) {
+        showResult("Please enter card details!", "error");
+        return;
+      }
+      
+      // Validate card format
+      const cardPattern = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
+      if (!cardPattern.test(cardInput)) {
+        showResult("Invalid card format! Use: number|month|year|cvv", "error");
+        return;
+      }
+      
+      // Show loading
+      resultDiv.className = "show";
+      resultDiv.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p>Processing ${gateType.toUpperCase()} gate...</p>
+        </div>
+      `;
+      
+      try {
+        const response = await fetch(window.location.origin + "/cc-check", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            card: cardInput,
+            gate_type: gateType
+          })
+        });
         
-        # Clean the response - remove unwanted parts
-        cleaned_text = clean_cc_response(final_text)
+        const data = await response.json();
         
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
+        if (data.ok && data.raw) {
+          showResult(data.raw, "success");
+        } else if (data.ok && data.full_response) {
+          // Fallback to full response if cleaning failed
+          showResult(data.full_response, "success");
+        } else {
+          const errorMsg = data.detail || JSON.stringify(data);
+          showResult("Error: " + errorMsg, "error");
+        }
+      } catch (err) {
+        showResult("Network Error: " + err.message, "error");
+      }
+    }
+    
+    function showResult(content, type) {
+      const resultDiv = document.getElementById("result");
+      const className = type === "error" ? "error show" : "success show";
+      const title = type === "error" ? "❌ Error" : "✅ Response";
+      
+      resultDiv.className = className;
+      resultDiv.innerHTML = `
+        <div class="result-title">${title}</div>
+        <div class="result-content">${escapeHtml(content)}</div>
+      `;
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+    
+    // Allow Enter key to submit
+    document.getElementById("cardInput").addEventListener("keypress", function(e) {
+      if (e.key === "Enter") {
+        // Default to stripe if Enter is pressed
+        checkCard('stripe');
+      }
+    });
+    async function checkCardsBatch(gateType) {
+      const textarea = document.getElementById("cardsTextarea");
+      const resultDiv = document.getElementById("result");
+      const lines = textarea.value.split(/\n+/).map(s => s.trim()).filter(Boolean);
 
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    except errors.FloodWaitError as e:
-        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+      if (!lines.length) {
+        showResult("Please enter at least one card (one per line).", "error");
+        return;
+      }
 
-# ----------------------------
-# Health
-# ----------------------------
-@app.get("/health")
-async def health():
-    return {"ok": True}
+      // Show loading
+      resultDiv.className = "show";
+      resultDiv.innerHTML = `
+        <div class=\"loading\">\n          <div class=\"spinner\"></div>\n          <p>Processing ${lines.length} cards via ${gateType.toUpperCase()}...</p>\n        </div>
+      `;
 
-# ----------------------------
-# Static frontend (mount LAST so /lookup isn't shadowed)
-# ----------------------------
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
+      try {
+        const response = await fetch(window.location.origin + "/cc-check-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            cards: lines,
+            gate_type: gateType
+          })
+        });
+        const data = await response.json();
+
+        if (data.ok && Array.isArray(data.results)) {
+          let html = '<div class=\"result-title\">✅ Batch Results</div>';
+          html += '<div class=\"result-content\">';
+          data.results.forEach((r, idx) => {
+            html += `\n#${idx+1} — ${escapeHtml(r.card)}\n`;
+            if (r.ok) {
+              html += `${escapeHtml(r.raw)}\n`;
+            } else {
+              html += `Error: ${escapeHtml(r.error || 'Unknown error')}\n`;
+            }
+            html += `\n`;
+          });
+          html += '</div>';
+          resultDiv.className = "success show";
+          resultDiv.innerHTML = html;
+        } else {
+          const errorMsg = data.detail || JSON.stringify(data);
+          showResult("Error: " + errorMsg, "error");
+        }
+      } catch (err) {
+        showResult("Network Error: " + err.message, "error");
+      }
+    }
+  </script>
+</body>
+</html>
+
