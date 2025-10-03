@@ -57,7 +57,7 @@
       font-size: 1.1em;
     }
     
-    .card-input {
+    .card-input, .cards-textarea {
       width: 100%;
       padding: 15px 20px;
       border: 2px solid #e0e0e0;
@@ -71,6 +71,11 @@
       outline: none;
       border-color: #667eea;
       box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .cards-textarea {
+      min-height: 120px;
+      resize: vertical;
     }
     
     .gates-container {
@@ -260,7 +265,7 @@
     <p class="subtitle">Validate credit cards through multiple payment gates</p>
     
     <div class="input-section">
-      <label class="input-label">Enter Card Details:</label>
+      <label class="input-label">Enter Card Details (single):</label>
       <input 
         id="cardInput" 
         type="text" 
@@ -269,6 +274,12 @@
         autocomplete="off"
       >
       <small style="color: #666; margin-top: 5px; display: block;">Format: card_number|month|year|cvv</small>
+    </div>
+    
+    <div class="input-section">
+      <label class="input-label">Enter Multiple Cards (one per line):</label>
+      <textarea id="cardsTextarea" class="cards-textarea" placeholder="5333499418581618|03|29|232\n4556737586899855|05|2028|123\n..."></textarea>
+      <small style="color: #666; margin-top: 5px; display: block;">We'll process them sequentially and return per-card results.</small>
     </div>
     
     <div class="gates-container">
@@ -281,6 +292,12 @@
           <button class="gate-btn braintree-btn" onclick="checkCard('braintree')">
             <span>Braintree Auth</span>
           </button>
+          <button class="gate-btn stripe-btn" onclick="checkCardsBatch('stripe')">
+            <span>Stripe Auth (Batch)</span>
+          </button>
+          <button class="gate-btn braintree-btn" onclick="checkCardsBatch('braintree')">
+            <span>Braintree Auth (Batch)</span>
+          </button>
         </div>
       </div>
       
@@ -292,6 +309,12 @@
           </button>
           <button class="gate-btn shopify-btn" onclick="checkCard('shopify')">
             <span>Shopify Charge</span>
+          </button>
+          <button class="gate-btn paypal-btn" onclick="checkCardsBatch('paypal')">
+            <span>PayPal Charge (Batch)</span>
+          </button>
+          <button class="gate-btn shopify-btn" onclick="checkCardsBatch('shopify')">
+            <span>Shopify Charge (Batch)</span>
           </button>
         </div>
       </div>
@@ -338,10 +361,14 @@
         
         const data = await response.json();
         
-        if (data.ok) {
+        if (data.ok && data.raw) {
           showResult(data.raw, "success");
+        } else if (data.ok && data.full_response) {
+          // Fallback to full response if cleaning failed
+          showResult(data.full_response, "success");
         } else {
-          showResult("Error: " + JSON.stringify(data), "error");
+          const errorMsg = data.detail || JSON.stringify(data);
+          showResult("Error: " + errorMsg, "error");
         }
       } catch (err) {
         showResult("Network Error: " + err.message, "error");
@@ -373,6 +400,56 @@
         checkCard('stripe');
       }
     });
+    async function checkCardsBatch(gateType) {
+      const textarea = document.getElementById("cardsTextarea");
+      const resultDiv = document.getElementById("result");
+      const lines = textarea.value.split(/\n+/).map(s => s.trim()).filter(Boolean);
+
+      if (!lines.length) {
+        showResult("Please enter at least one card (one per line).", "error");
+        return;
+      }
+
+      // Show loading
+      resultDiv.className = "show";
+      resultDiv.innerHTML = `
+        <div class=\"loading\">\n          <div class=\"spinner\"></div>\n          <p>Processing ${lines.length} cards via ${gateType.toUpperCase()}...</p>\n        </div>
+      `;
+
+      try {
+        const response = await fetch(window.location.origin + "/cc-check-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            cards: lines,
+            gate_type: gateType
+          })
+        });
+        const data = await response.json();
+
+        if (data.ok && Array.isArray(data.results)) {
+          let html = '<div class=\"result-title\">✅ Batch Results</div>';
+          html += '<div class=\"result-content\">';
+          data.results.forEach((r, idx) => {
+            html += `\n#${idx+1} — ${escapeHtml(r.card)}\n`;
+            if (r.ok) {
+              html += `${escapeHtml(r.raw)}\n`;
+            } else {
+              html += `Error: ${escapeHtml(r.error || 'Unknown error')}\n`;
+            }
+            html += `\n`;
+          });
+          html += '</div>';
+          resultDiv.className = "success show";
+          resultDiv.innerHTML = html;
+        } else {
+          const errorMsg = data.detail || JSON.stringify(data);
+          showResult("Error: " + errorMsg, "error");
+        }
+      } catch (err) {
+        showResult("Network Error: " + err.message, "error");
+      }
+    }
   </script>
 </body>
 </html>
