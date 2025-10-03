@@ -136,6 +136,36 @@ def clean_cc_response(text: str):
     return result if result else text
 
 # ----------------------------
+# Helpers for CC checker flow
+# ----------------------------
+def extract_message_text(msg):
+    """Safely extract textual content from a Telethon Message (message or caption)."""
+    if not msg:
+        return ""
+    return getattr(msg, "raw_text", None) or getattr(msg, "message", None) or getattr(msg, "text", None) or ""
+
+def is_processing_message(text: str) -> bool:
+    if not text:
+        return False
+    s = text.lower()
+    return ("processing" in s) or ("🔄" in text) or ("loading" in s) or ("working" in s)
+
+def is_final_cc_result(text: str) -> bool:
+    """Heuristic to detect when a CC checker reply is a final result, not a progress update."""
+    if not text:
+        return False
+    if is_processing_message(text):
+        return False
+    # Common indicators the result is finalized
+    indicators_any = [
+        "𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:", "Response:", "APPROVED", "DECLINED", "CHARGED",
+        "𝗖𝗮𝗿𝗱:", "Card:", "𝐆𝐚𝐭𝐞𝐰𝐚𝐲:", "Gateway:",
+        "Issuer:", "𝐈𝐬𝐬𝐮𝐞𝐫:", "Country:", "𝐂𝐨𝐮𝐧𝐭𝐫𝐲:", "CVV", "LIVE", "DEAD",
+        "✅", "❌"
+    ]
+    return any(k in text for k in indicators_any)
+
+# ----------------------------
 # /lookup endpoint
 # ----------------------------
 @app.post("/lookup")
@@ -228,60 +258,69 @@ async def cc_check(req: CCCheckRequest):
     try:
         # Resolve bot entity
         bot = await client.get_entity(CC_CHECKER_BOT)
-        bot_id = bot.id
-        
-        # Storage for messages from bot
-        collected_messages = []
-        message_event = asyncio.Event()
-        
-        # Event handler to collect ALL messages from this bot
-        @client.on(events.NewMessage(from_users=bot_id))
-        async def message_handler(event):
-            if event.message.text:
-                collected_messages.append(event.message.text)
-                # If message contains result indicators, set event
-                if any(indicator in event.message.text for indicator in ['APPROVED', 'DECLINED', 'CHARGED', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', 'Response:', 'CVV', 'Gateway:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:']):
-                    message_event.set()
-        
-        try:
+
+        # Use conversation to wait for bot replies
+        # Some bots edit their messages in-place, so we will poll the latest
+        # messages from the bot dialog if needed to detect a final result.
+        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20) as conv:
             # Send the command to the bot
-            await client.send_message(bot, command)
+            await conv.send_message(command)
             
-            # Wait for result message (with indicators) or timeout after 30 seconds
-            try:
-                await asyncio.wait_for(message_event.wait(), timeout=30)
-                # Wait a bit more for any follow-up messages
-                await asyncio.sleep(2)
-            except asyncio.TimeoutError:
-                # If no result indicators found, just wait and hope we got something
-                pass
+            all_messages = []
+            final_text = ""
             
-        finally:
-            # Remove the event handler
-            client.remove_event_handler(message_handler)
-        
-        if not collected_messages:
+            # Phase 1: Wait up to 15s for a non-processing message via conversation queue
+            phase1_deadline = asyncio.get_event_loop().time() + 15
+            while asyncio.get_event_loop().time() < phase1_deadline:
+                try:
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                    text = extract_message_text(getattr(msg, 'message', msg))
+                    if text:
+                        all_messages.append(text)
+                        if is_final_cc_result(text):
+                            final_text = text
+                            break
+                except asyncio.TimeoutError:
+                    # keep trying in loop until deadline
+                    continue
+                except Exception:
+                    break
+
+            # Phase 2: If still not final, poll recent messages from the bot chat
+            # Some bots edit messages or send outside the conversation queue
+            if not final_text:
+                poll_deadline = asyncio.get_event_loop().time() + 20
+                while asyncio.get_event_loop().time() < poll_deadline:
+                    try:
+                        async for m in client.iter_messages(bot, limit=5):
+                            t = extract_message_text(m)
+                            if t and t not in all_messages:
+                                all_messages.append(t)
+                            if is_final_cc_result(t):
+                                final_text = t
+                                break
+                        if final_text:
+                            break
+                        await asyncio.sleep(2)
+                    except Exception:
+                        await asyncio.sleep(2)
+
+        if not all_messages:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
 
-        # Find the actual result (skip processing messages)
-        final_text = ""
-        for msg in reversed(collected_messages):
-            # Skip processing messages, get the actual result
-            if "Processing" not in msg and "🔄" not in msg and len(msg) > 50:
-                final_text = msg
-                break
-        
-        # If no non-processing message found, use last message
-        if not final_text and collected_messages:
-            final_text = collected_messages[-1]
-        
         if not final_text:
-            raise HTTPException(status_code=502, detail="No valid response received from bot.")
+            # As a fallback, pick the last non-processing message if any
+            for msg in reversed(all_messages):
+                if not is_processing_message(msg):
+                    final_text = msg
+                    break
+            if not final_text:
+                final_text = all_messages[-1]
         
         # Clean the response - remove unwanted parts
         cleaned_text = clean_cc_response(final_text)
         
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "total_messages": len(collected_messages)}
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
