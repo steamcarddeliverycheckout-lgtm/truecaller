@@ -13,11 +13,11 @@ from telethon.sessions import StringSession
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
-# Force rebuild - v2
 
 # Target bots
 TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
+JACK_CHECKER_BOT = "Jackthe_ripper_bot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 # ----------------------------
@@ -42,16 +42,11 @@ class CCCheckRequest(BaseModel):
     card: str
     gate_type: str  # 'stripe', 'braintree', 'paypal', 'shopify'
 
-class CCCheckBatchRequest(BaseModel):
-    cards: list[str]
-    gate_type: str  # same values as above
-
-class CCCheckBatchResult(BaseModel):
+class AdvancedCCRequest(BaseModel):
     card: str
-    ok: bool
-    raw: str | None = None
-    full_response: str | None = None
-    error: str | None = None
+    checker: str  # 'checker1' or 'checker2'
+    gate_category: str  # 'auth', 'charge', 'killer'
+    gate_provider: str  # provider name based on checker
 
 async def ensure_client_started():
     if not TELEGRAM_READY:
@@ -341,117 +336,131 @@ async def cc_check(req: CCCheckRequest):
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
 
-@app.post("/cc-check-batch")
-async def cc_check_batch(req: CCCheckBatchRequest):
+# ----------------------------
+# /cc-check-advanced endpoint (Two checkers)
+# ----------------------------
+@app.post("/cc-check-advanced")
+async def cc_check_advanced(req: AdvancedCCRequest):
     if not TELEGRAM_READY:
         raise HTTPException(status_code=500, detail="Telegram not configured.")
 
-    # Validate cards list
-    if not isinstance(req.cards, list) or not req.cards:
-        raise HTTPException(status_code=400, detail="Provide a non-empty list of cards")
-
-    # Reuse gate command mapping
-    gate_commands = {
-        "stripe": "/st",
-        "braintree": "/ba",
-        "paypal": "/pp",
-        "shopify": "/sp"
-    }
-    if req.gate_type not in gate_commands:
-        raise HTTPException(status_code=400, detail="Invalid gate type. Use: stripe, braintree, paypal, or shopify")
-
+    # Validate card format
     card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
+    if not re.match(card_pattern, req.card.strip()):
+        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
+
+    checker = req.checker.lower()
+    category = req.gate_category.lower()
+    provider = req.gate_provider.lower()
+
+    # Determine bot and command
+    bot_username = None
+    command = None
+    
+    if checker == "checker1":
+        bot_username = CC_CHECKER_BOT
+        if category == "auth":
+            if provider == "stripe":
+                command = f"/st {req.card.strip()}"
+            elif provider == "braintree":
+                command = f"/ba {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Auth")
+        elif category == "charge":
+            if provider == "paypal":
+                command = f"/pp {req.card.strip()}"
+            elif provider == "shopify":
+                command = f"/sp {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Charge")
+        elif category == "killer":
+            command = f"/kd {req.card.strip()}"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid category for Checker 1")
+    
+    elif checker == "checker2":
+        bot_username = JACK_CHECKER_BOT
+        if category == "auth":
+            if provider == "braintree":
+                command = f"/br {req.card.strip()}"
+            elif provider == "stripe":
+                command = f"/chk {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Auth")
+        elif category == "charge":
+            if provider == "braintree":
+                command = f"/ch {req.card.strip()}"
+            elif provider == "stripe":
+                command = f"/sk {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Charge")
+        else:
+            raise HTTPException(status_code=400, detail="Checker 2 does not support Killer gate")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid checker. Use checker1 or checker2")
 
     try:
         await ensure_client_started()
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-    results = []
     try:
-        # Resolve bot entity once
-        bot = await client.get_entity(CC_CHECKER_BOT)
+        bot = await client.get_entity(bot_username)
 
-        # Single conversation, multiple commands sequentially
         async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20) as conv:
-            for card in req.cards:
-                card_clean = card.strip()
-                if not re.match(card_pattern, card_clean):
-                    results.append({
-                        "card": card,
-                        "ok": False,
-                        "error": "Invalid card format. Use: number|month|year|cvv"
-                    })
-                    continue
-
-                command = f"{gate_commands[req.gate_type]} {card_clean}"
-
-                # Send command
-                await conv.send_message(command)
-
-                # Collect messages for this card
-                per_messages = []
-                final_text = ""
-
-                # Phase 1: wait for a non-processing message quickly
-                phase1_deadline = asyncio.get_event_loop().time() + 15
-                while asyncio.get_event_loop().time() < phase1_deadline:
-                    try:
-                        msg = await asyncio.wait_for(conv.get_response(), timeout=3)
-                        text = extract_message_text(getattr(msg, 'message', msg))
-                        if text:
-                            per_messages.append(text)
-                            if is_final_cc_result(text):
-                                final_text = text
-                                break
-                    except asyncio.TimeoutError:
-                        continue
-                    except Exception:
-                        break
-
-                # Phase 2: poll the bot chat if still not final
-                if not final_text:
-                    poll_deadline = asyncio.get_event_loop().time() + 20
-                    while asyncio.get_event_loop().time() < poll_deadline:
-                        try:
-                            async for m in client.iter_messages(bot, limit=7):
-                                t = extract_message_text(m)
-                                if t and t not in per_messages:
-                                    per_messages.append(t)
-                                if is_final_cc_result(t):
-                                    final_text = t
-                                    break
-                            if final_text:
-                                break
-                            await asyncio.sleep(2)
-                        except Exception:
-                            await asyncio.sleep(2)
-
-                if not per_messages:
-                    results.append({
-                        "card": card,
-                        "ok": False,
-                        "error": "No reply text received from bot."
-                    })
-                    continue
-
-                if not final_text:
-                    for t in reversed(per_messages):
-                        if not is_processing_message(t):
-                            final_text = t
+            await conv.send_message(command)
+            
+            all_messages = []
+            final_text = ""
+            
+            # Phase 1: Wait for messages
+            phase1_deadline = asyncio.get_event_loop().time() + 15
+            while asyncio.get_event_loop().time() < phase1_deadline:
+                try:
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                    text = extract_message_text(getattr(msg, 'message', msg))
+                    if text:
+                        all_messages.append(text)
+                        if is_final_cc_result(text):
+                            final_text = text
                             break
-                    if not final_text:
-                        final_text = per_messages[-1]
+                except asyncio.TimeoutError:
+                    continue
+                except Exception:
+                    break
 
-                cleaned_text = clean_cc_response(final_text)
-                results.append({
-                    "card": card,
-                    "ok": True,
-                    "raw": cleaned_text,
-                    "full_response": final_text
-                })
+            # Phase 2: Poll recent messages if needed
+            if not final_text:
+                poll_deadline = asyncio.get_event_loop().time() + 20
+                while asyncio.get_event_loop().time() < poll_deadline:
+                    try:
+                        async for m in client.iter_messages(bot, limit=5):
+                            t = extract_message_text(m)
+                            if t and t not in all_messages:
+                                all_messages.append(t)
+                            if is_final_cc_result(t):
+                                final_text = t
+                                break
+                        if final_text:
+                            break
+                        await asyncio.sleep(2)
+                    except Exception:
+                        await asyncio.sleep(2)
 
-        return {"ok": True, "results": results}
+        if not all_messages:
+            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+        if not final_text:
+            for msg in reversed(all_messages):
+                if not is_processing_message(msg):
+                    final_text = msg
+                    break
+            if not final_text:
+                final_text = all_messages[-1]
+        
+        cleaned_text = clean_cc_response(final_text)
+        
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
