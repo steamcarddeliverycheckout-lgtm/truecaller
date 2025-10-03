@@ -8,14 +8,14 @@ from telethon import TelegramClient, errors, events
 from telethon.sessions import StringSession
 
 # ----------------------------
-# Config (from Render ENV)
+# Config (Render ENV)
 # ----------------------------
 API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
 API_HASH = os.environ.get("TELEGRAM_API_HASH")
 STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
 
-# Use this bot:
-TRUECALLER_BOT = "Truecaller_sbot"  # ✅ new bot
+# Target bot
+TRUECALLER_BOT = "Truecaller_sbot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 # ----------------------------
@@ -46,7 +46,7 @@ async def ensure_client_started():
 
 # ----------------------------
 # Parser for @Truecaller_sbot
-# Example reply:
+# Example:
 # ✅ Truecaller Details Revealed.!!
 # ━━━━━━━━━━━━━━━━━━━━━━
 # 📱  Carrier: Not Found
@@ -84,9 +84,6 @@ def parse_sbot_reply(text: str):
     out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
     out["username"] = pick(r"👤\s*Username:\s*(.+)")
     out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
-
-    # Some bots also show the number in "International Format" or "Local Format"
-    # If both 'Not Found', koi number string nahi milega — that's fine.
     out["raw"] = text
     return out
 
@@ -98,7 +95,6 @@ async def lookup(req: LookupRequest):
     if not TELEGRAM_READY:
         raise HTTPException(status_code=500, detail="Telegram not configured.")
 
-    # Basic number validation (allow +, digits, spaces, hyphens; then condense)
     cleaned = re.sub(r"[ \-()]", "", req.number.strip())
     if not re.match(r"^\+?\d{6,15}$", cleaned):
         raise HTTPException(status_code=400, detail="Invalid phone number format.")
@@ -109,27 +105,15 @@ async def lookup(req: LookupRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
-        # Resolve bot entity (more reliable than plain username in filters)
+        # Resolve bot entity (more robust)
         bot = await client.get_entity(TRUECALLER_BOT)
 
-        # Send the number message and get message id (helps with filtering)
+        # Send the number to the bot
         sent = await client.send_message(bot, req.number.strip())
 
-        # Function to ensure we prefer replies related to our 'sent' message if possible
-        def is_reply_to_our_message(e):
-            try:
-                # Same chat, incoming only (we already filter incoming=True below)
-                if e.chat_id != sent.chat_id:
-                    return False
-                # Prefer replies that reference our message id; if not provided by bot, still accept
-                r = e.message.reply_to_msg_id
-                return (r == sent.id) or (r is None)
-            except Exception:
-                return False
-
-        # Wait for the first incoming message from the bot
-        first_event = await client.wait_for_event(
-            events.NewMessage(incoming=True, chats=bot, func=is_reply_to_our_message),
+        # Wait for first incoming message from that bot (correct method: wait_for)
+        first_event = await client.wait_for(
+            events.NewMessage(chats=bot, incoming=True),
             timeout=TIMEOUT_SECONDS,
         )
 
@@ -138,12 +122,12 @@ async def lookup(req: LookupRequest):
         if t0:
             texts.append(t0)
 
-        # Collect up to 2 more quick follow-ups (some bots split replies)
+        # Collect up to 2 quick follow-ups (bots sometimes split replies)
         for _ in range(2):
             try:
-                ev = await client.wait_for_event(
-                    events.NewMessage(incoming=True, chats=bot),
-                    timeout=2  # short extra window
+                ev = await client.wait_for(
+                    events.NewMessage(chats=bot, incoming=True),
+                    timeout=2
                 )
                 t = getattr(ev, "raw_text", None) or ev.message.message or ""
                 if t:
@@ -176,6 +160,6 @@ async def health():
     return {"ok": True}
 
 # ----------------------------
-# Static frontend (keep LAST so /lookup isn't shadowed)
+# Static frontend (mount LAST so /lookup isn't shadowed)
 # ----------------------------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
