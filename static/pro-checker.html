@@ -1,589 +1,497 @@
-<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Pro CC Checker - Dual Gate Validator</title>
-  <style>
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-    
-    body {
-      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7e22ce 100%);
-      min-height: 100vh;
-      padding: 15px;
-      overflow-x: hidden;
-    }
-    
-    .container {
-      max-width: 480px;
-      margin: 0 auto;
-      padding-bottom: 20px;
-    }
-    
-    .header {
-      text-align: center;
-      color: white;
-      margin-bottom: 25px;
-      padding-top: 10px;
-    }
-    
-    .header h1 {
-      font-size: 2em;
-      margin-bottom: 5px;
-      text-shadow: 2px 2px 8px rgba(0,0,0,0.3);
-    }
-    
-    .header p {
-      font-size: 0.95em;
-      opacity: 0.9;
-    }
-    
-    .card-input-section {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 20px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    }
-    
-    .input-label {
-      display: block;
-      margin-bottom: 8px;
-      color: #333;
-      font-weight: 600;
-      font-size: 0.95em;
-    }
-    
-    .card-input {
-      width: 100%;
-      padding: 14px 16px;
-      border: 2px solid #e0e0e0;
-      border-radius: 12px;
-      font-size: 15px;
-      font-family: monospace;
-      transition: all 0.3s ease;
-      background: #f8f9fa;
-    }
-    
-    .card-input:focus {
-      outline: none;
-      border-color: #667eea;
-      background: white;
-      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
-    }
-    
-    .checker-card {
-      background: rgba(255, 255, 255, 0.95);
-      border-radius: 20px;
-      padding: 20px;
-      margin-bottom: 20px;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    }
-    
-    .checker-header {
-      text-align: center;
-      margin-bottom: 18px;
-      padding-bottom: 12px;
-      border-bottom: 2px solid #f0f0f0;
-    }
-    
-    .checker-title {
-      font-size: 1.4em;
-      font-weight: 700;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      margin-bottom: 3px;
-    }
-    
-    .checker-subtitle {
-      font-size: 0.85em;
-      color: #666;
-    }
-    
-    .gate-selector {
-      margin-bottom: 15px;
-    }
-    
-    .gate-label {
-      display: block;
-      margin-bottom: 8px;
-      color: #555;
-      font-weight: 600;
-      font-size: 0.9em;
-    }
-    
-    .gate-options {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 10px;
-    }
-    
-    .gate-options.triple {
-      grid-template-columns: 1fr 1fr 1fr;
-    }
-    
-    .gate-radio {
-      display: none;
-    }
-    
-    .gate-btn {
-      padding: 12px 10px;
-      border: 2px solid #e0e0e0;
-      border-radius: 10px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      background: white;
-      font-weight: 600;
-      font-size: 0.85em;
-      color: #666;
-    }
-    
-    .gate-radio:checked + .gate-btn {
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-      border-color: #667eea;
-      transform: scale(1.05);
-      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
-    }
-    
-    .provider-options {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 8px;
-      margin-top: 10px;
-    }
-    
-    .provider-btn {
-      padding: 10px;
-      border: 2px solid #e0e0e0;
-      border-radius: 8px;
-      text-align: center;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      background: #f8f9fa;
-      font-weight: 500;
-      font-size: 0.8em;
-      color: #555;
-    }
-    
-    .provider-radio:checked + .provider-btn {
-      background: linear-gradient(135deg, #00c9a7 0%, #00a88f 100%);
-      color: white;
-      border-color: #00c9a7;
-      box-shadow: 0 3px 10px rgba(0, 201, 167, 0.3);
-    }
-    
-    .check-button {
-      width: 100%;
-      padding: 15px;
-      border: none;
-      border-radius: 12px;
-      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-      color: white;
-      font-size: 1em;
-      font-weight: 700;
-      cursor: pointer;
-      transition: all 0.3s ease;
-      box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
-      margin-top: 15px;
-    }
-    
-    .check-button:hover {
-      transform: translateY(-2px);
-      box-shadow: 0 8px 25px rgba(245, 87, 108, 0.5);
-    }
-    
-    .check-button:active {
-      transform: translateY(0);
-    }
-    
-    .check-button:disabled {
-      opacity: 0.6;
-      cursor: not-allowed;
-    }
-    
-    #result {
-      margin-top: 20px;
-      padding: 18px;
-      border-radius: 15px;
-      background: rgba(255, 255, 255, 0.95);
-      display: none;
-      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    }
-    
-    #result.show {
-      display: block;
-      animation: slideUp 0.4s ease;
-    }
-    
-    @keyframes slideUp {
-      from {
-        opacity: 0;
-        transform: translateY(20px);
-      }
-      to {
-        opacity: 1;
-        transform: translateY(0);
-      }
-    }
-    
-    .result-header {
-      font-weight: 700;
-      color: #333;
-      margin-bottom: 12px;
-      font-size: 1.1em;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-    }
-    
-    .result-content {
-      background: #f8f9fa;
-      padding: 15px;
-      border-radius: 10px;
-      white-space: pre-wrap;
-      word-wrap: break-word;
-      font-family: 'Courier New', monospace;
-      font-size: 13px;
-      line-height: 1.7;
-      color: #333;
-      max-height: 450px;
-      overflow-y: auto;
-      border-left: 4px solid #667eea;
-    }
-    
-    .loading {
-      text-align: center;
-      padding: 20px;
-    }
-    
-    .spinner {
-      border: 3px solid #f3f3f3;
-      border-top: 3px solid #667eea;
-      border-radius: 50%;
-      width: 40px;
-      height: 40px;
-      animation: spin 1s linear infinite;
-      margin: 0 auto 15px;
-    }
-    
-    @keyframes spin {
-      0% { transform: rotate(0deg); }
-      100% { transform: rotate(360deg); }
-    }
-    
-    .loading-text {
-      color: #667eea;
-      font-weight: 600;
-    }
-    
-    .error {
-      border-left-color: #f44336;
-    }
-    
-    .error .result-content {
-      background: #ffebee;
-      color: #c62828;
-      border-left-color: #f44336;
-    }
-    
-    .success .result-content {
-      background: #e8f5e9;
-      color: #2e7d32;
-      border-left-color: #4caf50;
-    }
-    
-    .hidden {
-      display: none;
-    }
-    
-    @media (max-width: 400px) {
-      .header h1 {
-        font-size: 1.6em;
-      }
-      
-      .checker-title {
-        font-size: 1.2em;
-      }
-      
-      .gate-options {
-        grid-template-columns: 1fr;
-      }
-      
-      .gate-options.triple {
-        grid-template-columns: 1fr;
-      }
-    }
-  </style>
-</head>
-<body>
-  <div class="container">
-    <div class="header">
-      <h1>💎 Pro CC Checker</h1>
-      <p>Dual Gateway Validator System</p>
-    </div>
-    
-    <!-- Card Input Section -->
-    <div class="card-input-section">
-      <label class="input-label">💳 Card Details</label>
-      <input 
-        id="cardInput" 
-        type="text" 
-        class="card-input" 
-        placeholder="5333499418581618|03|29|232"
-        autocomplete="off"
-      >
-      <small style="color: #666; margin-top: 5px; display: block; font-size: 0.85em;">Format: number|month|year|cvv</small>
-    </div>
-    
-    <!-- Checker 1 -->
-    <div class="checker-card">
-      <div class="checker-header">
-        <div class="checker-title">🔷 Checker 1</div>
-        <div class="checker-subtitle">@niggacheck_bot</div>
-      </div>
-      
-      <!-- Gate Category -->
-      <div class="gate-selector">
-        <label class="gate-label">Select Gate Type:</label>
-        <div class="gate-options triple">
-          <label>
-            <input type="radio" name="checker1_gate" value="auth" class="gate-radio" checked>
-            <div class="gate-btn">🔐 Auth</div>
-          </label>
-          <label>
-            <input type="radio" name="checker1_gate" value="charge" class="gate-radio">
-            <div class="gate-btn">💰 Charge</div>
-          </label>
-          <label>
-            <input type="radio" name="checker1_gate" value="killer" class="gate-radio">
-            <div class="gate-btn">💀 Killer</div>
-          </label>
-        </div>
-      </div>
-      
-      <!-- Provider Options for Auth -->
-      <div id="checker1_auth" class="gate-selector">
-        <label class="gate-label">Provider:</label>
-        <div class="provider-options">
-          <label>
-            <input type="radio" name="checker1_provider_auth" value="stripe" class="gate-radio provider-radio" checked>
-            <div class="provider-btn">Stripe</div>
-          </label>
-          <label>
-            <input type="radio" name="checker1_provider_auth" value="braintree" class="gate-radio provider-radio">
-            <div class="provider-btn">Braintree</div>
-          </label>
-        </div>
-      </div>
-      
-      <!-- Provider Options for Charge -->
-      <div id="checker1_charge" class="gate-selector hidden">
-        <label class="gate-label">Provider:</label>
-        <div class="provider-options">
-          <label>
-            <input type="radio" name="checker1_provider_charge" value="paypal" class="gate-radio provider-radio" checked>
-            <div class="provider-btn">PayPal</div>
-          </label>
-          <label>
-            <input type="radio" name="checker1_provider_charge" value="shopify" class="gate-radio provider-radio">
-            <div class="provider-btn">Shopify</div>
-          </label>
-        </div>
-      </div>
-      
-      <button class="check-button" onclick="checkCard('checker1')">
-        ⚡ Check with Checker 1
-      </button>
-    </div>
-    
-    <!-- Checker 2 -->
-    <div class="checker-card">
-      <div class="checker-header">
-        <div class="checker-title">🔶 Checker 2</div>
-        <div class="checker-subtitle">@Jackthe_ripper_bot</div>
-      </div>
-      
-      <!-- Gate Category -->
-      <div class="gate-selector">
-        <label class="gate-label">Select Gate Type:</label>
-        <div class="gate-options">
-          <label>
-            <input type="radio" name="checker2_gate" value="auth" class="gate-radio" checked>
-            <div class="gate-btn">🔐 Auth</div>
-          </label>
-          <label>
-            <input type="radio" name="checker2_gate" value="charge" class="gate-radio">
-            <div class="gate-btn">💰 Charge</div>
-          </label>
-        </div>
-      </div>
-      
-      <!-- Provider Options for Auth -->
-      <div id="checker2_auth" class="gate-selector">
-        <label class="gate-label">Provider:</label>
-        <div class="provider-options">
-          <label>
-            <input type="radio" name="checker2_provider_auth" value="braintree" class="gate-radio provider-radio" checked>
-            <div class="provider-btn">Braintree</div>
-          </label>
-          <label>
-            <input type="radio" name="checker2_provider_auth" value="stripe" class="gate-radio provider-radio">
-            <div class="provider-btn">Stripe</div>
-          </label>
-        </div>
-      </div>
-      
-      <!-- Provider Options for Charge -->
-      <div id="checker2_charge" class="gate-selector hidden">
-        <label class="gate-label">Provider:</label>
-        <div class="provider-options">
-          <label>
-            <input type="radio" name="checker2_provider_charge" value="braintree" class="gate-radio provider-radio" checked>
-            <div class="provider-btn">Braintree</div>
-          </label>
-          <label>
-            <input type="radio" name="checker2_provider_charge" value="stripe" class="gate-radio provider-radio">
-            <div class="provider-btn">Stripe</div>
-          </label>
-        </div>
-      </div>
-      
-      <button class="check-button" onclick="checkCard('checker2')">
-        ⚡ Check with Checker 2
-      </button>
-    </div>
-    
-    <!-- Result Section -->
-    <div id="result"></div>
-  </div>
+import os
+import re
+import asyncio
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel
+from fastapi.staticfiles import StaticFiles
+from telethon import TelegramClient, errors, events
+from telethon.sessions import StringSession
 
-  <script>
-    // Toggle provider options based on gate selection for Checker 1
-    document.querySelectorAll('input[name="checker1_gate"]').forEach(radio => {
-      radio.addEventListener('change', function() {
-        document.getElementById('checker1_auth').classList.add('hidden');
-        document.getElementById('checker1_charge').classList.add('hidden');
-        
-        if (this.value === 'auth') {
-          document.getElementById('checker1_auth').classList.remove('hidden');
-        } else if (this.value === 'charge') {
-          document.getElementById('checker1_charge').classList.remove('hidden');
-        }
-      });
-    });
-    
-    // Toggle provider options based on gate selection for Checker 2
-    document.querySelectorAll('input[name="checker2_gate"]').forEach(radio => {
-      radio.addEventListener('change', function() {
-        document.getElementById('checker2_auth').classList.add('hidden');
-        document.getElementById('checker2_charge').classList.add('hidden');
-        
-        if (this.value === 'auth') {
-          document.getElementById('checker2_auth').classList.remove('hidden');
-        } else if (this.value === 'charge') {
-          document.getElementById('checker2_charge').classList.remove('hidden');
-        }
-      });
-    });
-    
-    async function checkCard(checker) {
-      const cardInput = document.getElementById("cardInput").value.trim();
-      const resultDiv = document.getElementById("result");
-      
-      if (!cardInput) {
-        showResult("❌ Please enter card details!", "error");
-        return;
-      }
-      
-      // Validate card format
-      const cardPattern = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
-      if (!cardPattern.test(cardInput)) {
-        showResult("❌ Invalid card format! Use: number|month|year|cvv", "error");
-        return;
-      }
-      
-      // Get selected gate category
-      const gateCategory = document.querySelector(`input[name="${checker}_gate"]:checked`).value;
-      
-      // Get selected provider
-      let provider = "";
-      if (gateCategory === "killer") {
-        provider = "killer"; // No provider needed for killer
-      } else {
-        const providerRadio = document.querySelector(`input[name="${checker}_provider_${gateCategory}"]:checked`);
-        if (providerRadio) {
-          provider = providerRadio.value;
-        }
-      }
-      
-      if (!provider) {
-        showResult("❌ Please select a provider!", "error");
-        return;
-      }
-      
-      // Show loading
-      resultDiv.className = "show";
-      resultDiv.innerHTML = `
-        <div class="loading">
-          <div class="spinner"></div>
-          <p class="loading-text">Processing with ${checker === 'checker1' ? 'Checker 1' : 'Checker 2'}...</p>
-        </div>
-      `;
-      
-      try {
-        const response = await fetch(window.location.origin + "/cc-check-advanced", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ 
-            card: cardInput,
-            checker: checker,
-            gate_category: gateCategory,
-            gate_provider: provider
-          })
-        });
-        
-        const data = await response.json();
-        
-        if (data.ok && data.raw) {
-          showResult(data.raw, "success");
-        } else if (data.ok && data.full_response) {
-          showResult(data.full_response, "success");
-        } else {
-          const errorMsg = data.detail || JSON.stringify(data);
-          showResult("❌ Error: " + errorMsg, "error");
-        }
-      } catch (err) {
-        showResult("❌ Network Error: " + err.message, "error");
-      }
-    }
-    
-    function showResult(content, type) {
-      const resultDiv = document.getElementById("result");
-      const className = type === "error" ? "error show" : "success show";
-      const icon = type === "error" ? "❌" : "✅";
-      const title = type === "error" ? "Error" : "Response";
-      
-      resultDiv.className = className;
-      resultDiv.innerHTML = `
-        <div class="result-header">${icon} ${title}</div>
-        <div class="result-content">${escapeHtml(content)}</div>
-      `;
-    }
-    
-    function escapeHtml(text) {
-      const div = document.createElement('div');
-      div.textContent = text;
-      return div.innerHTML;
-    }
-  </script>
-</body>
-</html>
+# ----------------------------
+# Config (Render ENV)
+# ----------------------------
+API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
+API_HASH = os.environ.get("TELEGRAM_API_HASH")
+STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
 
+# Target bots
+TRUECALLER_BOT = "Truecaller_sbot"
+CC_CHECKER_BOT = "niggacheck_bot"
+JACK_CHECKER_BOT = "Jackthe_ripper_bot"
+TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
+
+# ----------------------------
+# Telegram Client
+# ----------------------------
+if not (API_ID and API_HASH and STRING_SESSION):
+    TELEGRAM_READY = False
+    client = None
+else:
+    TELEGRAM_READY = True
+    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
+
+# ----------------------------
+# FastAPI app
+# ----------------------------
+app = FastAPI(title="Truecaller_sbot Proxy API")
+
+class LookupRequest(BaseModel):
+    number: str
+
+class CCCheckRequest(BaseModel):
+    card: str
+    gate_type: str  # 'stripe', 'braintree', 'paypal', 'shopify'
+
+class AdvancedCCRequest(BaseModel):
+    card: str
+    checker: str  # 'checker1' or 'checker2'
+    gate_category: str  # 'auth', 'charge', 'killer'
+    gate_provider: str  # provider name based on checker
+
+async def ensure_client_started():
+    if not TELEGRAM_READY:
+        raise RuntimeError("Telegram credentials/session missing.")
+    if not client.is_connected():
+        await client.connect()
+    if not await client.is_user_authorized():
+        raise RuntimeError("Telegram session not authorized. Recreate STRING_SESSION.")
+
+# ----------------------------
+# Parser for @Truecaller_sbot
+# Example:
+# ✅ Truecaller Details Revealed.!!
+# ━━━━━━━━━━━━━━━━━━━━━━
+# 📱  Carrier: Not Found
+# 🌍 Country: Not Found
+# 🌐 International Format: Not Found
+# 📞 Local Format: Not Found
+# 📍 Location: Not Found
+# 🕒 Timezones: Not Found
+# 🔍 Truecaller Name: usman pasha
+# 👤 Username: No name found
+# 🔎 Number search: 3
+# ----------------------------
+def parse_sbot_reply(text: str):
+    s = text.replace("\r\n", "\n")
+    out = {}
+
+    def pick(pattern, cast=None):
+        m = re.search(pattern, s, flags=re.IGNORECASE)
+        if not m:
+            return None
+        val = m.group(1).strip()
+        if cast:
+            try:
+                return cast(val)
+            except Exception:
+                return val
+        return val
+
+    out["carrier"] = pick(r"📱\s*Carrier:\s*(.+)")
+    out["country"] = pick(r"🌍\s*Country:\s*(.+)")
+    out["international_format"] = pick(r"🌐\s*International\s*Format:\s*(.+)")
+    out["local_format"] = pick(r"📞\s*Local\s*Format:\s*(.+)")
+    out["location"] = pick(r"📍\s*Location:\s*(.+)")
+    out["timezones"] = pick(r"🕒\s*Timezones?:\s*(.+)")
+    out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
+    out["username"] = pick(r"👤\s*Username:\s*(.+)")
+    out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
+    out["raw"] = text
+    return out
+
+# ----------------------------
+# Parser for CC checker bot response
+# ----------------------------
+def clean_cc_response(text: str):
+    """Extract only the important parts from CC checker response"""
+    if not text:
+        return ""
+    
+    lines = text.split('\n')
+    important_lines = []
+    
+    # Skip lines to exclude
+    skip_keywords = ['🔄', 'Processing', '⚡', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot']
+    
+    # Lines to keep
+    keep_keywords = ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 
+                     'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:',
+                     'APPROVED', 'DECLINED', 'CHARGED', 'CVV', 'LIVE', 
+                     '✅', '❌', '🌠', '💳', '🔥']
+    
+    for line in lines:
+        line = line.strip()
+        
+        # Skip empty lines
+        if not line:
+            continue
+            
+        # Skip unwanted lines
+        if any(skip in line for skip in skip_keywords):
+            continue
+        
+        # Keep important lines or lines with status indicators
+        if any(keep in line for keep in keep_keywords):
+            important_lines.append(line)
+        # Also keep separator lines
+        elif line.startswith('━'):
+            important_lines.append(line)
+    
+    result = '\n'.join(important_lines)
+    
+    # If cleaning removed everything, return original
+    return result if result else text
+
+# ----------------------------
+# Helpers for CC checker flow
+# ----------------------------
+def extract_message_text(msg):
+    """Safely extract textual content from a Telethon Message (message or caption)."""
+    if not msg:
+        return ""
+    return getattr(msg, "raw_text", None) or getattr(msg, "message", None) or getattr(msg, "text", None) or ""
+
+def is_processing_message(text: str) -> bool:
+    if not text:
+        return False
+    s = text.lower()
+    return ("processing" in s) or ("🔄" in text) or ("loading" in s) or ("working" in s)
+
+def is_final_cc_result(text: str) -> bool:
+    """Heuristic to detect when a CC checker reply is a final result, not a progress update."""
+    if not text:
+        return False
+    if is_processing_message(text):
+        return False
+    # Common indicators the result is finalized
+    indicators_any = [
+        "𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:", "Response:", "APPROVED", "DECLINED", "CHARGED",
+        "𝗖𝗮𝗿𝗱:", "Card:", "𝐆𝐚𝐭𝐞𝐰𝐚𝐲:", "Gateway:",
+        "Issuer:", "𝐈𝐬𝐬𝐮𝐞𝐫:", "Country:", "𝐂𝐨𝐮𝐧𝐭𝐫𝐲:", "CVV", "LIVE", "DEAD",
+        "✅", "❌"
+    ]
+    return any(k in text for k in indicators_any)
+
+# ----------------------------
+# /lookup endpoint
+# ----------------------------
+@app.post("/lookup")
+async def lookup(req: LookupRequest):
+    if not TELEGRAM_READY:
+        raise HTTPException(status_code=500, detail="Telegram not configured.")
+
+    cleaned = re.sub(r"[ \-()]", "", req.number.strip())
+    if not re.match(r"^\+?\d{6,15}$", cleaned):
+        raise HTTPException(status_code=400, detail="Invalid phone number format.")
+
+    try:
+        await ensure_client_started()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        # Resolve bot entity (more robust)
+        bot = await client.get_entity(TRUECALLER_BOT)
+
+        # Use conversation to wait for bot replies
+        async with client.conversation(bot, timeout=TIMEOUT_SECONDS) as conv:
+            # Send the number to the bot
+            await conv.send_message(req.number.strip())
+            
+            # Get the first reply
+            response = await conv.get_response()
+            
+            texts = []
+            if response.text:
+                texts.append(response.text)
+            
+            # Collect up to 2 quick follow-ups (bots sometimes split replies)
+            for _ in range(2):
+                try:
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=2)
+                    if msg.text:
+                        texts.append(msg.text)
+                except asyncio.TimeoutError:
+                    break
+                except Exception:
+                    break
+
+        if not texts:
+            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+        full_text = "\n\n".join(texts)
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
+    except errors.FloodWaitError as e:
+        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+
+    parsed = parse_sbot_reply(full_text)
+    return {"ok": True, "data": parsed, "raw": full_text}
+
+# ----------------------------
+# /cc-check endpoint
+# ----------------------------
+@app.post("/cc-check")
+async def cc_check(req: CCCheckRequest):
+    if not TELEGRAM_READY:
+        raise HTTPException(status_code=500, detail="Telegram not configured.")
+
+    # Validate card format (number|month|year|cvv)
+    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
+    if not re.match(card_pattern, req.card.strip()):
+        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
+
+    # Map gate type to command
+    gate_commands = {
+        "stripe": "/st",
+        "braintree": "/ba",
+        "paypal": "/pp",
+        "shopify": "/sp"
+    }
+    
+    if req.gate_type not in gate_commands:
+        raise HTTPException(status_code=400, detail="Invalid gate type. Use: stripe, braintree, paypal, or shopify")
+    
+    command = f"{gate_commands[req.gate_type]} {req.card.strip()}"
+
+    try:
+        await ensure_client_started()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        # Resolve bot entity
+        bot = await client.get_entity(CC_CHECKER_BOT)
+
+        all_messages = []
+        final_text = ""
+        
+        # Use conversation with proper exception handling
+        # Some bots edit their messages in-place, so we will poll the latest
+        # messages from the bot dialog if needed to detect a final result.
+        try:
+            async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20, exclusive=False) as conv:
+                # Send the command to the bot
+                await conv.send_message(command)
+                
+                # Phase 1: Wait up to 15s for a non-processing message via conversation queue
+                phase1_deadline = asyncio.get_event_loop().time() + 15
+                while asyncio.get_event_loop().time() < phase1_deadline:
+                    try:
+                        msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                        text = extract_message_text(getattr(msg, 'message', msg))
+                        if text:
+                            all_messages.append(text)
+                            if is_final_cc_result(text):
+                                final_text = text
+                                break
+                    except asyncio.TimeoutError:
+                        # keep trying in loop until deadline
+                        continue
+                    except Exception as e:
+                        # Ignore InvalidStateError and similar conversation errors
+                        if "invalid state" not in str(e).lower():
+                            break
+                        continue
+        except Exception as conv_error:
+            # If conversation fails, continue to polling
+            pass
+
+        # Phase 2: If still not final, poll recent messages from the bot chat
+        # Some bots edit messages or send outside the conversation queue
+        if not final_text:
+            poll_deadline = asyncio.get_event_loop().time() + 20
+            while asyncio.get_event_loop().time() < poll_deadline:
+                try:
+                    async for m in client.iter_messages(bot, limit=5):
+                        t = extract_message_text(m)
+                        if t and t not in all_messages:
+                            all_messages.append(t)
+                        if is_final_cc_result(t):
+                            final_text = t
+                            break
+                    if final_text:
+                        break
+                    await asyncio.sleep(2)
+                except Exception:
+                    await asyncio.sleep(2)
+
+        if not all_messages:
+            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+        if not final_text:
+            # As a fallback, pick the last non-processing message if any
+            for msg in reversed(all_messages):
+                if not is_processing_message(msg):
+                    final_text = msg
+                    break
+            if not final_text:
+                final_text = all_messages[-1]
+        
+        # Clean the response - remove unwanted parts
+        cleaned_text = clean_cc_response(final_text)
+        
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
+    except errors.FloodWaitError as e:
+        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+
+# ----------------------------
+# /cc-check-advanced endpoint (Two checkers)
+# ----------------------------
+@app.post("/cc-check-advanced")
+async def cc_check_advanced(req: AdvancedCCRequest):
+    if not TELEGRAM_READY:
+        raise HTTPException(status_code=500, detail="Telegram not configured.")
+
+    # Validate card format
+    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
+    if not re.match(card_pattern, req.card.strip()):
+        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
+
+    checker = req.checker.lower()
+    category = req.gate_category.lower()
+    provider = req.gate_provider.lower()
+
+    # Determine bot and command
+    bot_username = None
+    command = None
+    
+    if checker == "checker1":
+        bot_username = CC_CHECKER_BOT
+        if category == "auth":
+            if provider == "stripe":
+                command = f"/st {req.card.strip()}"
+            elif provider == "braintree":
+                command = f"/ba {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Auth")
+        elif category == "charge":
+            if provider == "paypal":
+                command = f"/pp {req.card.strip()}"
+            elif provider == "shopify":
+                command = f"/sp {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Charge")
+        elif category == "killer":
+            command = f"/kd {req.card.strip()}"
+        else:
+            raise HTTPException(status_code=400, detail="Invalid category for Checker 1")
+    
+    elif checker == "checker2":
+        bot_username = JACK_CHECKER_BOT
+        if category == "auth":
+            if provider == "braintree":
+                command = f"/br {req.card.strip()}"
+            elif provider == "stripe":
+                command = f"/chk {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Auth")
+        elif category == "charge":
+            if provider == "braintree":
+                command = f"/ch {req.card.strip()}"
+            elif provider == "stripe":
+                command = f"/sk {req.card.strip()}"
+            else:
+                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Charge")
+        else:
+            raise HTTPException(status_code=400, detail="Checker 2 does not support Killer gate")
+    else:
+        raise HTTPException(status_code=400, detail="Invalid checker. Use checker1 or checker2")
+
+    try:
+        await ensure_client_started()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    try:
+        bot = await client.get_entity(bot_username)
+        
+        all_messages = []
+        final_text = ""
+        
+        # Use conversation with proper exception handling
+        try:
+            async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20, exclusive=False) as conv:
+                await conv.send_message(command)
+                
+                # Phase 1: Wait for messages with timeout
+                phase1_deadline = asyncio.get_event_loop().time() + 15
+                while asyncio.get_event_loop().time() < phase1_deadline:
+                    try:
+                        msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                        text = extract_message_text(getattr(msg, 'message', msg))
+                        if text:
+                            all_messages.append(text)
+                            if is_final_cc_result(text):
+                                final_text = text
+                                break
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception as e:
+                        # Ignore InvalidStateError and similar
+                        if "invalid state" not in str(e).lower():
+                            break
+                        continue
+        except Exception as conv_error:
+            # If conversation fails, continue to polling
+            pass
+
+        # Phase 2: Poll recent messages if needed
+        if not final_text:
+            poll_deadline = asyncio.get_event_loop().time() + 20
+            while asyncio.get_event_loop().time() < poll_deadline:
+                try:
+                    async for m in client.iter_messages(bot, limit=5):
+                        t = extract_message_text(m)
+                        if t and t not in all_messages:
+                            all_messages.append(t)
+                        if is_final_cc_result(t):
+                            final_text = t
+                            break
+                    if final_text:
+                        break
+                    await asyncio.sleep(2)
+                except Exception:
+                    await asyncio.sleep(2)
+
+        if not all_messages:
+            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+        if not final_text:
+            for msg in reversed(all_messages):
+                if not is_processing_message(msg):
+                    final_text = msg
+                    break
+            if not final_text:
+                final_text = all_messages[-1]
+        
+        cleaned_text = clean_cc_response(final_text)
+        
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
+
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
+    except errors.FloodWaitError as e:
+        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+
+# ----------------------------
+# Health
+# ----------------------------
+@app.get("/health")
+async def health():
+    return {"ok": True}
+
+# ----------------------------
+# Static frontend (mount LAST so /lookup isn't shadowed)
+# ----------------------------
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
