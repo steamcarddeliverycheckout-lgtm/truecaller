@@ -1,0 +1,589 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Pro CC Checker - Dual Gate Validator</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7e22ce 100%);
+      min-height: 100vh;
+      padding: 15px;
+      overflow-x: hidden;
+    }
+    
+    .container {
+      max-width: 480px;
+      margin: 0 auto;
+      padding-bottom: 20px;
+    }
+    
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 25px;
+      padding-top: 10px;
+    }
+    
+    .header h1 {
+      font-size: 2em;
+      margin-bottom: 5px;
+      text-shadow: 2px 2px 8px rgba(0,0,0,0.3);
+    }
+    
+    .header p {
+      font-size: 0.95em;
+      opacity: 0.9;
+    }
+    
+    .card-input-section {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    .input-label {
+      display: block;
+      margin-bottom: 8px;
+      color: #333;
+      font-weight: 600;
+      font-size: 0.95em;
+    }
+    
+    .card-input {
+      width: 100%;
+      padding: 14px 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 12px;
+      font-size: 15px;
+      font-family: monospace;
+      transition: all 0.3s ease;
+      background: #f8f9fa;
+    }
+    
+    .card-input:focus {
+      outline: none;
+      border-color: #667eea;
+      background: white;
+      box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+    }
+    
+    .checker-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 20px;
+      margin-bottom: 20px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    .checker-header {
+      text-align: center;
+      margin-bottom: 18px;
+      padding-bottom: 12px;
+      border-bottom: 2px solid #f0f0f0;
+    }
+    
+    .checker-title {
+      font-size: 1.4em;
+      font-weight: 700;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 3px;
+    }
+    
+    .checker-subtitle {
+      font-size: 0.85em;
+      color: #666;
+    }
+    
+    .gate-selector {
+      margin-bottom: 15px;
+    }
+    
+    .gate-label {
+      display: block;
+      margin-bottom: 8px;
+      color: #555;
+      font-weight: 600;
+      font-size: 0.9em;
+    }
+    
+    .gate-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+    }
+    
+    .gate-options.triple {
+      grid-template-columns: 1fr 1fr 1fr;
+    }
+    
+    .gate-radio {
+      display: none;
+    }
+    
+    .gate-btn {
+      padding: 12px 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 10px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: white;
+      font-weight: 600;
+      font-size: 0.85em;
+      color: #666;
+    }
+    
+    .gate-radio:checked + .gate-btn {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border-color: #667eea;
+      transform: scale(1.05);
+      box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+    }
+    
+    .provider-options {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      margin-top: 10px;
+    }
+    
+    .provider-btn {
+      padding: 10px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      text-align: center;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      background: #f8f9fa;
+      font-weight: 500;
+      font-size: 0.8em;
+      color: #555;
+    }
+    
+    .provider-radio:checked + .provider-btn {
+      background: linear-gradient(135deg, #00c9a7 0%, #00a88f 100%);
+      color: white;
+      border-color: #00c9a7;
+      box-shadow: 0 3px 10px rgba(0, 201, 167, 0.3);
+    }
+    
+    .check-button {
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 12px;
+      background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      color: white;
+      font-size: 1em;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
+      margin-top: 15px;
+    }
+    
+    .check-button:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(245, 87, 108, 0.5);
+    }
+    
+    .check-button:active {
+      transform: translateY(0);
+    }
+    
+    .check-button:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+    }
+    
+    #result {
+      margin-top: 20px;
+      padding: 18px;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.95);
+      display: none;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+    }
+    
+    #result.show {
+      display: block;
+      animation: slideUp 0.4s ease;
+    }
+    
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+    
+    .result-header {
+      font-weight: 700;
+      color: #333;
+      margin-bottom: 12px;
+      font-size: 1.1em;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    
+    .result-content {
+      background: #f8f9fa;
+      padding: 15px;
+      border-radius: 10px;
+      white-space: pre-wrap;
+      word-wrap: break-word;
+      font-family: 'Courier New', monospace;
+      font-size: 13px;
+      line-height: 1.7;
+      color: #333;
+      max-height: 450px;
+      overflow-y: auto;
+      border-left: 4px solid #667eea;
+    }
+    
+    .loading {
+      text-align: center;
+      padding: 20px;
+    }
+    
+    .spinner {
+      border: 3px solid #f3f3f3;
+      border-top: 3px solid #667eea;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 15px;
+    }
+    
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+    
+    .loading-text {
+      color: #667eea;
+      font-weight: 600;
+    }
+    
+    .error {
+      border-left-color: #f44336;
+    }
+    
+    .error .result-content {
+      background: #ffebee;
+      color: #c62828;
+      border-left-color: #f44336;
+    }
+    
+    .success .result-content {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border-left-color: #4caf50;
+    }
+    
+    .hidden {
+      display: none;
+    }
+    
+    @media (max-width: 400px) {
+      .header h1 {
+        font-size: 1.6em;
+      }
+      
+      .checker-title {
+        font-size: 1.2em;
+      }
+      
+      .gate-options {
+        grid-template-columns: 1fr;
+      }
+      
+      .gate-options.triple {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>💎 Pro CC Checker</h1>
+      <p>Dual Gateway Validator System</p>
+    </div>
+    
+    <!-- Card Input Section -->
+    <div class="card-input-section">
+      <label class="input-label">💳 Card Details</label>
+      <input 
+        id="cardInput" 
+        type="text" 
+        class="card-input" 
+        placeholder="5333499418581618|03|29|232"
+        autocomplete="off"
+      >
+      <small style="color: #666; margin-top: 5px; display: block; font-size: 0.85em;">Format: number|month|year|cvv</small>
+    </div>
+    
+    <!-- Checker 1 -->
+    <div class="checker-card">
+      <div class="checker-header">
+        <div class="checker-title">🔷 Checker 1</div>
+        <div class="checker-subtitle">@niggacheck_bot</div>
+      </div>
+      
+      <!-- Gate Category -->
+      <div class="gate-selector">
+        <label class="gate-label">Select Gate Type:</label>
+        <div class="gate-options triple">
+          <label>
+            <input type="radio" name="checker1_gate" value="auth" class="gate-radio" checked>
+            <div class="gate-btn">🔐 Auth</div>
+          </label>
+          <label>
+            <input type="radio" name="checker1_gate" value="charge" class="gate-radio">
+            <div class="gate-btn">💰 Charge</div>
+          </label>
+          <label>
+            <input type="radio" name="checker1_gate" value="killer" class="gate-radio">
+            <div class="gate-btn">💀 Killer</div>
+          </label>
+        </div>
+      </div>
+      
+      <!-- Provider Options for Auth -->
+      <div id="checker1_auth" class="gate-selector">
+        <label class="gate-label">Provider:</label>
+        <div class="provider-options">
+          <label>
+            <input type="radio" name="checker1_provider_auth" value="stripe" class="gate-radio provider-radio" checked>
+            <div class="provider-btn">Stripe</div>
+          </label>
+          <label>
+            <input type="radio" name="checker1_provider_auth" value="braintree" class="gate-radio provider-radio">
+            <div class="provider-btn">Braintree</div>
+          </label>
+        </div>
+      </div>
+      
+      <!-- Provider Options for Charge -->
+      <div id="checker1_charge" class="gate-selector hidden">
+        <label class="gate-label">Provider:</label>
+        <div class="provider-options">
+          <label>
+            <input type="radio" name="checker1_provider_charge" value="paypal" class="gate-radio provider-radio" checked>
+            <div class="provider-btn">PayPal</div>
+          </label>
+          <label>
+            <input type="radio" name="checker1_provider_charge" value="shopify" class="gate-radio provider-radio">
+            <div class="provider-btn">Shopify</div>
+          </label>
+        </div>
+      </div>
+      
+      <button class="check-button" onclick="checkCard('checker1')">
+        ⚡ Check with Checker 1
+      </button>
+    </div>
+    
+    <!-- Checker 2 -->
+    <div class="checker-card">
+      <div class="checker-header">
+        <div class="checker-title">🔶 Checker 2</div>
+        <div class="checker-subtitle">@Jackthe_ripper_bot</div>
+      </div>
+      
+      <!-- Gate Category -->
+      <div class="gate-selector">
+        <label class="gate-label">Select Gate Type:</label>
+        <div class="gate-options">
+          <label>
+            <input type="radio" name="checker2_gate" value="auth" class="gate-radio" checked>
+            <div class="gate-btn">🔐 Auth</div>
+          </label>
+          <label>
+            <input type="radio" name="checker2_gate" value="charge" class="gate-radio">
+            <div class="gate-btn">💰 Charge</div>
+          </label>
+        </div>
+      </div>
+      
+      <!-- Provider Options for Auth -->
+      <div id="checker2_auth" class="gate-selector">
+        <label class="gate-label">Provider:</label>
+        <div class="provider-options">
+          <label>
+            <input type="radio" name="checker2_provider_auth" value="braintree" class="gate-radio provider-radio" checked>
+            <div class="provider-btn">Braintree</div>
+          </label>
+          <label>
+            <input type="radio" name="checker2_provider_auth" value="stripe" class="gate-radio provider-radio">
+            <div class="provider-btn">Stripe</div>
+          </label>
+        </div>
+      </div>
+      
+      <!-- Provider Options for Charge -->
+      <div id="checker2_charge" class="gate-selector hidden">
+        <label class="gate-label">Provider:</label>
+        <div class="provider-options">
+          <label>
+            <input type="radio" name="checker2_provider_charge" value="braintree" class="gate-radio provider-radio" checked>
+            <div class="provider-btn">Braintree</div>
+          </label>
+          <label>
+            <input type="radio" name="checker2_provider_charge" value="stripe" class="gate-radio provider-radio">
+            <div class="provider-btn">Stripe</div>
+          </label>
+        </div>
+      </div>
+      
+      <button class="check-button" onclick="checkCard('checker2')">
+        ⚡ Check with Checker 2
+      </button>
+    </div>
+    
+    <!-- Result Section -->
+    <div id="result"></div>
+  </div>
+
+  <script>
+    // Toggle provider options based on gate selection for Checker 1
+    document.querySelectorAll('input[name="checker1_gate"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        document.getElementById('checker1_auth').classList.add('hidden');
+        document.getElementById('checker1_charge').classList.add('hidden');
+        
+        if (this.value === 'auth') {
+          document.getElementById('checker1_auth').classList.remove('hidden');
+        } else if (this.value === 'charge') {
+          document.getElementById('checker1_charge').classList.remove('hidden');
+        }
+      });
+    });
+    
+    // Toggle provider options based on gate selection for Checker 2
+    document.querySelectorAll('input[name="checker2_gate"]').forEach(radio => {
+      radio.addEventListener('change', function() {
+        document.getElementById('checker2_auth').classList.add('hidden');
+        document.getElementById('checker2_charge').classList.add('hidden');
+        
+        if (this.value === 'auth') {
+          document.getElementById('checker2_auth').classList.remove('hidden');
+        } else if (this.value === 'charge') {
+          document.getElementById('checker2_charge').classList.remove('hidden');
+        }
+      });
+    });
+    
+    async function checkCard(checker) {
+      const cardInput = document.getElementById("cardInput").value.trim();
+      const resultDiv = document.getElementById("result");
+      
+      if (!cardInput) {
+        showResult("❌ Please enter card details!", "error");
+        return;
+      }
+      
+      // Validate card format
+      const cardPattern = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
+      if (!cardPattern.test(cardInput)) {
+        showResult("❌ Invalid card format! Use: number|month|year|cvv", "error");
+        return;
+      }
+      
+      // Get selected gate category
+      const gateCategory = document.querySelector(`input[name="${checker}_gate"]:checked`).value;
+      
+      // Get selected provider
+      let provider = "";
+      if (gateCategory === "killer") {
+        provider = "killer"; // No provider needed for killer
+      } else {
+        const providerRadio = document.querySelector(`input[name="${checker}_provider_${gateCategory}"]:checked`);
+        if (providerRadio) {
+          provider = providerRadio.value;
+        }
+      }
+      
+      if (!provider) {
+        showResult("❌ Please select a provider!", "error");
+        return;
+      }
+      
+      // Show loading
+      resultDiv.className = "show";
+      resultDiv.innerHTML = `
+        <div class="loading">
+          <div class="spinner"></div>
+          <p class="loading-text">Processing with ${checker === 'checker1' ? 'Checker 1' : 'Checker 2'}...</p>
+        </div>
+      `;
+      
+      try {
+        const response = await fetch(window.location.origin + "/cc-check-advanced", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ 
+            card: cardInput,
+            checker: checker,
+            gate_category: gateCategory,
+            gate_provider: provider
+          })
+        });
+        
+        const data = await response.json();
+        
+        if (data.ok && data.raw) {
+          showResult(data.raw, "success");
+        } else if (data.ok && data.full_response) {
+          showResult(data.full_response, "success");
+        } else {
+          const errorMsg = data.detail || JSON.stringify(data);
+          showResult("❌ Error: " + errorMsg, "error");
+        }
+      } catch (err) {
+        showResult("❌ Network Error: " + err.message, "error");
+      }
+    }
+    
+    function showResult(content, type) {
+      const resultDiv = document.getElementById("result");
+      const className = type === "error" ? "error show" : "success show";
+      const icon = type === "error" ? "❌" : "✅";
+      const title = type === "error" ? "Error" : "Response";
+      
+      resultDiv.className = className;
+      resultDiv.innerHTML = `
+        <div class="result-header">${icon} ${title}</div>
+        <div class="result-content">${escapeHtml(content)}</div>
+      `;
+    }
+    
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
+
