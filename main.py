@@ -93,6 +93,28 @@ def parse_sbot_reply(text: str):
     return out
 
 # ----------------------------
+# Parser for CC checker bot response
+# ----------------------------
+def clean_cc_response(text: str):
+    """Extract only the important parts from CC checker response"""
+    lines = text.split('\n')
+    important_lines = []
+    
+    for line in lines:
+        line = line.strip()
+        # Skip empty lines, processing messages, and unwanted info
+        if not line:
+            continue
+        if any(skip in line for skip in ['🔄', 'Processing', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by']):
+            continue
+        
+        # Keep only: Card, Gateway, Response, Info, Issuer, Country, and status emojis
+        if any(keep in line for keep in ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:', 'APPROVED', 'DECLINED', 'CHARGED', '✅', '❌', '🌠']):
+            important_lines.append(line)
+    
+    return '\n'.join(important_lines)
+
+# ----------------------------
 # /lookup endpoint
 # ----------------------------
 @app.post("/lookup")
@@ -191,19 +213,16 @@ async def cc_check(req: CCCheckRequest):
             # Send the command to the bot
             await conv.send_message(command)
             
-            # Get the first reply
-            response = await conv.get_response()
-            
             texts = []
-            if response.text:
-                texts.append(response.text)
-            
-            # Collect up to 3 quick follow-ups (bot might send multiple messages)
-            for _ in range(3):
+            # Collect all messages from bot (usually processing + result)
+            for i in range(5):
                 try:
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                    timeout = TIMEOUT_SECONDS if i == 0 else 5
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=timeout)
                     if msg.text:
-                        texts.append(msg.text)
+                        # Skip processing messages
+                        if "Processing" not in msg.text and "🔄" not in msg.text:
+                            texts.append(msg.text)
                 except asyncio.TimeoutError:
                     break
                 except Exception:
@@ -212,9 +231,13 @@ async def cc_check(req: CCCheckRequest):
         if not texts:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
 
-        full_text = "\n\n".join(texts)
+        # Get the last message (final result)
+        full_text = texts[-1] if texts else ""
         
-        return {"ok": True, "raw": full_text}
+        # Clean the response - remove unwanted parts
+        cleaned_text = clean_cc_response(full_text)
+        
+        return {"ok": True, "raw": cleaned_text}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
