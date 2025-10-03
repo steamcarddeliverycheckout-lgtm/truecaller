@@ -5,51 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>H4K3R CC Checker</title>
   <style>
-    :root {
-      --bg-1: #141e30;
-      --bg-2: #243b55;
-      --glass: rgba(255, 255, 255, 0.08);
-      --glass-border: rgba(255, 255, 255, 0.16);
-      --text-strong: #0f172a;
-      --text-muted: #5f6b7a;
-      --brand-blue: #2563eb;
-      --brand-purple: #7c3aed;
-      --brand-orange: #f59e0b;
-      --brand-red: #ef4444;
-      --success: #22c55e;
-      --error: #ef4444;
-      --radius-xl: 26px;
-      --radius-lg: 18px;
-      --radius-md: 14px;
-    }
-
     * {
+      margin: 0;
+      padding: 0;
       box-sizing: border-box;
     }
 
     body {
-      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+      background: linear-gradient(135deg, #1e3c72 0%, #2a5298 50%, #7e22ce 100%);
       min-height: 100vh;
+      padding: 15px;
       display: flex;
       justify-content: center;
       align-items: center;
-      padding: 32px 16px;
-      font-family: "Inter", "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
-      background: radial-gradient(circle at top left, rgba(126, 58, 237, 0.55), transparent 35%),
-                  radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.5), transparent 30%),
-                  linear-gradient(135deg, var(--bg-1), var(--bg-2));
-      color: var(--text-strong);
     }
 
-    .surface {
+    .main-container {
       width: 100%;
-      max-width: 880px;
-      background: rgba(255, 255, 255, 0.92);
-      border-radius: var(--radius-xl);
-      padding: 36px 28px;
-      backdrop-filter: blur(14px);
-      box-shadow: 0 25px 70px rgba(15, 23, 42, 0.35);
-      animation: fadeIn 0.6s ease;
+      max-width: 800px;
+      animation: fadeIn 0.5s ease;
     }
 
     @keyframes fadeIn {
@@ -63,264 +38,258 @@
       }
     }
 
-    .page-header {
+    .header {
       text-align: center;
-      margin-bottom: 32px;
+      margin-bottom: 30px;
+      color: #fff;
     }
 
-    .page-title {
-      font-size: clamp(26px, 5vw, 34px);
+    .header h1 {
+      font-size: 2.2em;
       font-weight: 800;
-      letter-spacing: -0.02em;
-      color: var(--text-strong);
-      margin-bottom: 6px;
+      margin-bottom: 8px;
+      text-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+      letter-spacing: 1px;
     }
 
-    .page-subtitle {
-      font-size: 16px;
-      color: var(--text-muted);
-      font-weight: 500;
+    .header p {
+      font-size: 1em;
+      opacity: 0.9;
+      font-weight: 300;
     }
 
-    .card {
-      background: rgba(255, 255, 255, 0.72);
-      border-radius: var(--radius-lg);
-      padding: 24px 24px 28px;
-      border: 1px solid rgba(15, 23, 42, 0.08);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9),
-                  0 14px 35px rgba(15, 23, 42, 0.12);
-    }
-
-    .mode-toggle {
-      display: flex;
-      gap: 8px;
-      background: rgba(37, 99, 235, 0.08);
-      padding: 6px;
-      border-radius: 999px;
+    .checker-card {
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 20px;
+      padding: 25px;
       margin-bottom: 20px;
+      box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
+      backdrop-filter: blur(10px);
+      transition: transform 0.3s ease, box-shadow 0.3s ease;
     }
 
-    .mode-button {
-      flex: 1;
-      border: none;
-      border-radius: 999px;
-      padding: 12px 14px;
-      font-size: 15px;
-      font-weight: 600;
-      color: var(--text-muted);
-      background: transparent;
-      cursor: pointer;
-      transition: all 0.25s ease;
+    .checker-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 15px 50px rgba(0, 0, 0, 0.4);
     }
 
-    .mode-button:hover {
-      color: var(--brand-purple);
-    }
-
-    .mode-button.active {
-      background: linear-gradient(135deg, rgba(124, 58, 237, 0.92), rgba(37, 99, 235, 0.92));
-      box-shadow: 0 8px 18px rgba(37, 99, 235, 0.28);
-      color: #ffffff;
-    }
-
-    .card-heading {
-      display: flex;
-      flex-direction: column;
+    /* Segmented Switch */
+    .switch {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      background: rgba(255,255,255,0.18);
+      border: 1px solid rgba(255,255,255,0.35);
+      border-radius: 14px;
+      padding: 6px;
       gap: 6px;
-      margin-bottom: 24px;
+      margin: 0 auto 16px auto;
+      max-width: 520px;
+      backdrop-filter: blur(8px);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.15);
+    }
+    .switch-btn {
+      appearance: none;
+      border: 0;
+      border-radius: 10px;
+      padding: 10px 12px;
+      color: #e5e7eb;
+      background: transparent;
+      font-weight: 700;
+      cursor: pointer;
+      transition: .2s ease;
+    }
+    .switch-btn.active {
+      background: linear-gradient(135deg, #7e22ce, #9333ea);
+      color: #ffffff;
+      box-shadow: 0 6px 18px rgba(126, 34, 206, 0.45);
+    }
+    .hidden { display: none; }
+
+    .card-header {
+      margin-bottom: 20px;
+      padding-bottom: 15px;
+      border-bottom: 2px solid #e5e7eb;
     }
 
-    .checker-label {
-      font-size: 13px;
-      font-weight: 600;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-      color: var(--text-muted);
-    }
-
-    .checker-title {
-      font-size: clamp(20px, 4vw, 26px);
-      font-weight: 800;
-      letter-spacing: -0.01em;
+    .card-title {
+      font-size: 1.5em;
+      font-weight: 700;
+      color: #1f2937;
       display: flex;
       align-items: center;
       gap: 10px;
-      color: var(--text-strong);
     }
 
-    .tier-tag {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 6px 12px;
-      border-radius: 999px;
-      font-size: 12px;
-      font-weight: 700;
-      letter-spacing: 0.1em;
-      text-transform: uppercase;
-    }
-
-    .tag-standard {
-      background: rgba(59, 130, 246, 0.12);
-      color: #2563eb;
-      border: 1px solid rgba(59, 130, 246, 0.35);
-    }
-
-    .tag-premium {
-      background: rgba(239, 68, 68, 0.12);
-      color: #ef4444;
-      border: 1px solid rgba(239, 68, 68, 0.35);
-    }
-
-    .checker-description {
-      font-size: 15px;
-      color: var(--text-muted);
-      font-weight: 500;
-    }
-
-    .field {
-      margin-bottom: 18px;
-    }
-
-    .field label {
-      display: block;
-      font-size: 14px;
+    .badge {
+      display: inline-block;
+      background: linear-gradient(135deg, #7e22ce, #9333ea);
+      color: white;
+      padding: 4px 12px;
+      border-radius: 20px;
+      font-size: 0.6em;
       font-weight: 600;
-      color: var(--text-strong);
-      margin-bottom: 10px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .badge.pro {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+    }
+
+    .input-group {
+      margin-bottom: 15px;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.9em;
+      font-weight: 600;
+      color: #374151;
+      margin-bottom: 8px;
     }
 
     .card-input {
       width: 100%;
-      padding: 16px 18px;
-      border-radius: var(--radius-md);
-      border: 2px solid rgba(15, 23, 42, 0.08);
-      background: rgba(248, 250, 252, 0.85);
-      font-size: 16px;
-      font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
-      font-weight: 600;
-      letter-spacing: 0.04em;
-      color: var(--text-strong);
-      transition: all 0.2s ease;
-    }
-
-    .card-input::placeholder {
-      color: rgba(15, 23, 42, 0.35);
-      font-weight: 500;
+      padding: 14px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      font-size: 1em;
+      font-family: 'Courier New', monospace;
+      transition: all 0.3s ease;
+      background: #f9fafb;
     }
 
     .card-input:focus {
       outline: none;
-      border-color: rgba(124, 58, 237, 0.75);
-      background: #ffffff;
-      box-shadow: 0 0 0 5px rgba(124, 58, 237, 0.15);
+      border-color: #7e22ce;
+      background: white;
+      box-shadow: 0 0 0 4px rgba(126, 34, 206, 0.1);
     }
 
     .input-hint {
-      margin-top: 6px;
-      font-size: 13px;
-      color: var(--text-muted);
+      font-size: 0.8em;
+      color: #6b7280;
+      margin-top: 5px;
+    }
+
+    /* Live selection summary */
+    .summary {
       display: flex;
       align-items: center;
+      gap: 8px;
+      margin: 8px 0 4px 0;
+      font-size: 12px;
+      color: #6b7280;
+    }
+    .tag {
+      display: inline-flex;
+      align-items: center;
       gap: 6px;
-    }
-
-    .chips {
-      display: grid;
-      gap: 10px;
-      grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-    }
-
-    .chip {
-      border: 1px solid rgba(15, 23, 42, 0.12);
-      background: rgba(248, 250, 252, 0.95);
-      border-radius: 14px;
-      padding: 10px 14px;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--text-muted);
-      cursor: pointer;
-      transition: all 0.2s ease;
-      text-align: center;
-    }
-
-    .chip:hover {
-      border-color: rgba(124, 58, 237, 0.4);
-      color: var(--brand-purple);
-    }
-
-    .chip.active {
-      background: linear-gradient(130deg, rgba(124, 58, 237, 0.95), rgba(37, 99, 235, 0.95));
-      color: #ffffff;
-      border-color: transparent;
-      box-shadow: 0 10px 22px rgba(37, 99, 235, 0.25);
-      transform: translateY(-1px);
-    }
-
-    .chip.small {
-      font-size: 13px;
-      padding: 10px;
-    }
-
-    .cta-button {
-      width: 100%;
-      border: none;
-      border-radius: 18px;
-      padding: 16px 20px;
-      font-size: 17px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #4338ca;
+      border: 1px solid #e0e7ff;
       font-weight: 700;
-      color: #ffffff;
+    }
+    .tag.prov { background: #ecfeff; color: #0e7490; border-color: #cffafe; }
+    .tag.cat { background: #fef3c7; color: #92400e; border-color: #fde68a; }
+
+    .controls-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+      margin-bottom: 15px;
+    }
+
+    .select-wrapper {
+      position: relative;
+    }
+
+    select {
+      width: 100%;
+      padding: 12px 16px;
+      border: 2px solid #e5e7eb;
+      border-radius: 12px;
+      font-size: 0.95em;
+      background: #f9fafb;
+      color: #1f2937;
+      font-weight: 500;
       cursor: pointer;
-      transition: all 0.25s ease;
-      margin-top: 10px;
+      transition: all 0.3s ease;
+      appearance: none;
+      background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%236b7280'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+      background-repeat: no-repeat;
+      background-position: right 10px center;
+      background-size: 20px;
+      padding-right: 40px;
     }
 
-    .btn-standard {
-      background: linear-gradient(135deg, #2563eb, #7c3aed);
-      box-shadow: 0 15px 30px rgba(37, 99, 235, 0.35);
+    select:focus {
+      outline: none;
+      border-color: #7e22ce;
+      background-color: white;
+      box-shadow: 0 0 0 4px rgba(126, 34, 206, 0.1);
     }
 
-    .btn-standard:hover {
-      box-shadow: 0 18px 36px rgba(37, 99, 235, 0.45);
-      transform: translateY(-1px);
+    .btn-check {
+      width: 100%;
+      padding: 16px;
+      border: none;
+      border-radius: 12px;
+      font-size: 1.1em;
+      font-weight: 700;
+      color: white;
+      cursor: pointer;
+      transition: all 0.3s ease;
+      position: relative;
+      overflow: hidden;
+      background: linear-gradient(135deg, #7e22ce, #9333ea);
+      box-shadow: 0 4px 15px rgba(126, 34, 206, 0.4);
     }
 
-    .btn-premium {
-      background: linear-gradient(135deg, #f59e0b, #ef4444);
-      box-shadow: 0 15px 28px rgba(239, 68, 68, 0.35);
+    .btn-check:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(126, 34, 206, 0.5);
     }
 
-    .btn-premium:hover {
-      box-shadow: 0 18px 36px rgba(239, 68, 68, 0.45);
-      transform: translateY(-1px);
+    .btn-check:active {
+      transform: translateY(0);
     }
 
-    .cta-button:disabled {
-      opacity: 0.65;
-      transform: none;
+    .btn-check:disabled {
+      opacity: 0.6;
       cursor: not-allowed;
-      box-shadow: none;
+      transform: none;
     }
 
-    .panel {
-      margin-top: 26px;
-      padding: 18px 20px 20px;
-      border-radius: 18px;
-      background: rgba(248, 250, 252, 0.95);
-      border: 2px solid rgba(148, 163, 184, 0.25);
-      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
+    .btn-check.pro {
+      background: linear-gradient(135deg, #f59e0b, #ef4444);
+      box-shadow: 0 4px 15px rgba(239, 68, 68, 0.4);
+    }
+
+    .btn-check.pro:hover {
+      box-shadow: 0 6px 20px rgba(239, 68, 68, 0.5);
+    }
+
+    .result-box {
+      margin-top: 20px;
+      padding: 16px;
+      border-radius: 12px;
+      background: #f9fafb;
+      border-left: 4px solid #7e22ce;
       display: none;
+      animation: slideDown 0.3s ease;
     }
 
-    .panel.show {
+    .result-box.show {
       display: block;
-      animation: slideUp 0.35s ease;
     }
 
-    @keyframes slideUp {
+    @keyframes slideDown {
       from {
         opacity: 0;
-        transform: translateY(10px);
+        transform: translateY(-10px);
       }
       to {
         opacity: 1;
@@ -328,136 +297,225 @@
       }
     }
 
-    .panel.loading {
-      border-left: 4px solid var(--brand-blue);
-      background: rgba(219, 234, 254, 0.6);
+    .result-box.loading {
+      background: #eff6ff;
+      border-left-color: #3b82f6;
     }
 
-    .panel.success {
-      border-left: 4px solid var(--success);
-      background: rgba(220, 252, 231, 0.6);
+    .result-box.success {
+      background: #f0fdf4;
+      border-left-color: #22c55e;
     }
 
-    .panel.error {
-      border-left: 4px solid var(--error);
-      background: rgba(254, 226, 226, 0.6);
+    .result-box.error {
+      background: #fef2f2;
+      border-left-color: #ef4444;
     }
 
-    .panel-head {
-      font-size: 16px;
+    .result-header {
       font-weight: 700;
-      margin-bottom: 12px;
+      margin-bottom: 10px;
+      font-size: 1.1em;
       display: flex;
       align-items: center;
       gap: 8px;
     }
 
-    .panel-body {
-      margin: 0;
-      background: #ffffff;
-      border-radius: 12px;
+    .result-content {
+      background: white;
       padding: 14px;
-      font-size: 14px;
-      line-height: 1.6;
+      border-radius: 8px;
+      font-family: 'Courier New', monospace;
+      font-size: 0.9em;
       white-space: pre-wrap;
-      word-break: break-word;
-      font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Consolas, monospace;
-      color: var(--text-strong);
-      max-height: 360px;
+      word-wrap: break-word;
+      line-height: 1.6;
+      max-height: 400px;
       overflow-y: auto;
+      color: #1f2937;
     }
 
-    .panel-status {
-      margin-top: 12px;
-      font-size: 13px;
-      font-weight: 600;
-      color: var(--text-muted);
-      display: flex;
-      align-items: center;
-      gap: 8px;
+    .loading-spinner {
+      display: inline-block;
+      width: 18px;
+      height: 18px;
+      border: 3px solid rgba(59, 130, 246, 0.3);
+      border-top-color: #3b82f6;
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
     }
 
-    .panel-status span {
-      display: inline-flex;
-      align-items: center;
-      gap: 6px;
+    @keyframes spin {
+      to { transform: rotate(360deg); }
     }
 
-    .panel-body::-webkit-scrollbar {
+    .status-msg {
+      font-size: 0.9em;
+      color: #6b7280;
+      margin-top: 8px;
+    }
+    .status-msg .elapsed { font-weight: 700; color: #111827; }
+
+    @media (max-width: 640px) {
+      .header h1 {
+        font-size: 1.8em;
+      }
+
+      .header p {
+        font-size: 0.9em;
+      }
+
+      .checker-card {
+        padding: 20px;
+      }
+
+      .card-title {
+        font-size: 1.3em;
+      }
+
+      .controls-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* Scrollbar styling */
+    .result-content::-webkit-scrollbar {
       width: 8px;
     }
 
-    .panel-body::-webkit-scrollbar-track {
-      background: rgba(241, 245, 249, 0.8);
-      border-radius: 999px;
+    .result-content::-webkit-scrollbar-track {
+      background: #f1f1f1;
+      border-radius: 4px;
     }
 
-    .panel-body::-webkit-scrollbar-thumb {
-      background: rgba(100, 116, 139, 0.45);
-      border-radius: 999px;
+    .result-content::-webkit-scrollbar-thumb {
+      background: #d1d5db;
+      border-radius: 4px;
     }
 
-    @media (max-width: 640px) {
-      .surface {
-        padding: 28px 18px;
-      }
-
-      .card {
-        padding: 22px 18px 26px;
-      }
-
-      .chips {
-        grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
-      }
-
-      .panel-body {
-        font-size: 13px;
-      }
+    .result-content::-webkit-scrollbar-thumb:hover {
+      background: #9ca3af;
     }
   </style>
 </head>
 <body>
-  <div class="surface">
-    <div class="page-header">
-      <div class="page-title">💳 H4K3R Card Analyzer</div>
-      <div class="page-subtitle">Instant Telegram gate checks with a silky soft UI</div>
+  <div class="main-container">
+    <div class="header">
+      <h1>💳 CC Checker Pro</h1>
+      <p>Professional Card Validation System</p>
     </div>
 
-    <div class="card">
-      <div class="mode-toggle" role="tablist" aria-label="Select checker">
-        <button class="mode-button active" data-checker="first" aria-pressed="true">H4K3R Checker</button>
-        <button class="mode-button" data-checker="second" aria-pressed="false">H4K3R CHECKER PRO</button>
+    <div class="switch" role="tablist" aria-label="Select Checker">
+      <button class="switch-btn active" data-target="first" aria-selected="true">H4K3R Checker</button>
+      <button class="switch-btn" data-target="second" aria-selected="false">H4K3R CHECKER PRO</button>
+    </div>
+
+    <!-- H4K3R Checker -->
+    <div class="checker-card" id="card_first">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🔐 H4K3R Checker</span>
+          <span class="badge">Standard</span>
+        </div>
       </div>
 
-      <div class="card-heading">
-        <div class="checker-label">Selected checker</div>
-        <div class="checker-title" id="checkerTitle">🔐 H4K3R Checker</div>
-        <div class="tier-tag tag-standard" id="tierTag">Standard</div>
-        <div class="checker-description" id="checkerDescription">Auth & Charge gates via Telegram bot</div>
-      </div>
-
-      <div class="field">
-        <label for="cardInput">Card details</label>
-        <input id="cardInput" class="card-input" type="text" placeholder="5333499418581618|03|2029|232" autocomplete="off">
+      <div class="input-group">
+        <label class="input-label">Card Details</label>
+        <input 
+          id="c1_card" 
+          type="text" 
+          class="card-input" 
+          placeholder="5333499418581618|03|2029|232"
+          autocomplete="off"
+        >
         <div class="input-hint">Format: number|month|year|cvv</div>
       </div>
 
-      <div class="field">
-        <label>Category</label>
-        <div class="chips" id="categoryChips"></div>
+      <div class="controls-row">
+          <div>
+          <label class="input-label">Category</label>
+            <select id="c1_category">
+            <option value="auth">Auth Gate</option>
+            <option value="charge">Charge Gate</option>
+            </select>
+          </div>
+          <div>
+          <label class="input-label">Provider</label>
+            <select id="c1_provider">
+              <option value="stripe">Stripe</option>
+              <option value="braintree">Braintree</option>
+              <option value="paypal">PayPal</option>
+              <option value="shopify">Shopify</option>
+            </select>
+          </div>
+        </div>
+
+      <div class="summary" id="c1_summary">
+        <span class="tag cat">Auth</span>
+        <span class="tag prov">Stripe</span>
       </div>
 
-      <div class="field">
-        <label>Provider</label>
-        <div class="chips" id="providerChips"></div>
+      <button class="btn-check" onclick="checkCard('first')" id="btn1">
+        ⚡ Check Card
+      </button>
+
+      <div id="result1" class="result-box">
+        <div class="result-header" id="result1_header"></div>
+        <div class="result-content" id="result1_content"></div>
+        <div class="status-msg" id="result1_status"></div>
+      </div>
+    </div>
+
+    <!-- H4K3R CHECKER PRO -->
+    <div class="checker-card hidden" id="card_second">
+      <div class="card-header">
+        <div class="card-title">
+          <span>🔥 H4K3R CHECKER PRO</span>
+          <span class="badge pro">Premium</span>
+        </div>
       </div>
 
-      <button id="actionButton" class="cta-button btn-standard">⚡ Run H4K3R Checker</button>
+      <div class="input-group">
+        <label class="input-label">Card Details</label>
+        <input 
+          id="c2_card" 
+          type="text" 
+          class="card-input" 
+          placeholder="5333499418581618|03|2029|232"
+          autocomplete="off"
+        >
+        <div class="input-hint">Format: number|month|year|cvv</div>
+        </div>
 
-      <div id="resultPanel" class="panel">
-        <div class="panel-head" id="resultHeader"></div>
-        <pre class="panel-body" id="resultBody"></pre>
-        <div class="panel-status" id="resultStatus"></div>
+      <div class="controls-row">
+        <div>
+          <label class="input-label">Category</label>
+          <select id="c2_category" onchange="updateProviders()">
+            <option value="auth">Auth Gate</option>
+            <option value="charge">Charge Gate</option>
+          </select>
+        </div>
+        <div>
+          <label class="input-label">Provider</label>
+          <select id="c2_provider">
+            <!-- Dynamic options -->
+          </select>
+        </div>
+      </div>
+
+      <div class="summary" id="c2_summary">
+        <span class="tag cat">Auth</span>
+        <span class="tag prov">Braintree</span>
+      </div>
+
+      <button class="btn-check pro" onclick="checkCard('second')" id="btn2">
+        🚀 Check Card Pro
+      </button>
+
+      <div id="result2" class="result-box">
+        <div class="result-header" id="result2_header"></div>
+        <div class="result-content" id="result2_content"></div>
+        <div class="status-msg" id="result2_status"></div>
       </div>
     </div>
   </div>
@@ -465,225 +523,121 @@
   <script>
     const CARD_REGEX = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
 
-    const CONFIG = {
-      first: {
-        title: '🔐 H4K3R Checker',
-        tierLabel: 'Standard',
-        tierClass: 'tag-standard',
-        description: 'Auth & Charge gates via Telegram bot',
-        buttonText: '⚡ Run H4K3R Checker',
-        buttonClass: 'btn-standard',
-        categories: {
-          auth: {
-            label: 'Auth Gate',
-            providers: {
-              stripe: 'Stripe /st',
-              braintree: 'Braintree /ba'
-            }
-          },
-          charge: {
-            label: 'Charge Gate',
-            providers: {
-              paypal: 'PayPal /pp',
-              shopify: 'Shopify /sp'
-            }
-          }
-        }
-      },
-      second: {
-        title: '🔥 H4K3R CHECKER PRO',
-        tierLabel: 'Premium',
-        tierClass: 'tag-premium',
-        description: 'Premium auth & charge with advanced routes',
-        buttonText: '🚀 Run Checker Pro',
-        buttonClass: 'btn-premium',
-        categories: {
-          auth: {
-            label: 'Auth Gate',
-            providers: {
-              braintree: 'Braintree /br',
-              stripe: 'Stripe /chk'
-            }
-          },
-          charge: {
-            label: 'Charge Gate',
-            providers: {
-              braintree: 'Braintree /ch',
-              stripe: 'Stripe /sk'
-            }
-          }
-        }
-      }
-    };
+    // Initialize provider options for checker 2
+    function updateProviders() {
+      const category = document.getElementById('c2_category').value;
+      const select = document.getElementById('c2_provider');
+      select.innerHTML = '';
 
-    const state = {
-      checker: 'first',
-      category: null,
-      provider: null
-    };
-
-    const checkerTitleEl = document.getElementById('checkerTitle');
-    const tierTagEl = document.getElementById('tierTag');
-    const checkerDescriptionEl = document.getElementById('checkerDescription');
-    const categoryChipsEl = document.getElementById('categoryChips');
-    const providerChipsEl = document.getElementById('providerChips');
-    const actionButton = document.getElementById('actionButton');
-    const cardInput = document.getElementById('cardInput');
-
-    const resultPanel = document.getElementById('resultPanel');
-    const resultHeader = document.getElementById('resultHeader');
-    const resultBody = document.getElementById('resultBody');
-    const resultStatus = document.getElementById('resultStatus');
-
-    let statusTimer = null;
-    let statusStart = 0;
-
-    function clearStatusTimer() {
-      if (statusTimer) {
-        clearInterval(statusTimer);
-        statusTimer = null;
+      if (category === 'auth') {
+        select.add(new Option('Braintree', 'braintree'));
+        select.add(new Option('Stripe', 'stripe'));
+      } else if (category === 'charge') {
+        select.add(new Option('Braintree', 'braintree'));
+        select.add(new Option('Stripe', 'stripe'));
       }
     }
 
-    function startStatusTimer() {
-      clearStatusTimer();
-      statusStart = Date.now();
-      const phases = [
-        { at: 0, text: '📡 Connecting to Telegram bots' },
-        { at: 6, text: '⌛ Waiting for bot response' },
-        { at: 12, text: '🤖 Bots can take up to 20 seconds to reply' },
-        { at: 20, text: '⏱ Still waiting, please hold on…' }
-      ];
+    // Initialize on load
+    updateProviders();
 
-      const update = () => {
-        const elapsed = Math.floor((Date.now() - statusStart) / 1000);
-        let phaseText = phases[phases.length - 1].text;
-        for (let i = phases.length - 1; i >= 0; i--) {
-          if (elapsed >= phases[i].at) {
-            phaseText = phases[i].text;
-            break;
-          }
-        }
-        resultStatus.textContent = `${phaseText} • ${elapsed}s elapsed`;
+    // Switch logic (show only one checker at a time)
+    const switchButtons = document.querySelectorAll('.switch-btn');
+    function setActiveChecker(which) {
+      const firstCard = document.getElementById('card_first');
+      const secondCard = document.getElementById('card_second');
+      const isFirst = which === 'first';
+      firstCard.classList.toggle('hidden', !isFirst);
+      secondCard.classList.toggle('hidden', isFirst);
+      switchButtons.forEach(b => {
+        const active = b.getAttribute('data-target') === which;
+        b.classList.toggle('active', active);
+        b.setAttribute('aria-selected', active ? 'true' : 'false');
+      });
+    }
+    switchButtons.forEach(btn => btn.addEventListener('click', () => setActiveChecker(btn.getAttribute('data-target'))));
+
+    function showResult(resultId, type, headerText, content, statusText = '') {
+      const resultBox = document.getElementById(resultId);
+      const header = document.getElementById(resultId + '_header');
+      const contentDiv = document.getElementById(resultId + '_content');
+      const status = document.getElementById(resultId + '_status');
+
+      resultBox.className = 'result-box show ' + type;
+      header.innerHTML = headerText;
+      contentDiv.textContent = content;
+      status.textContent = statusText;
+    }
+
+    // Update selection summary UI
+    function updateSummary(prefix) {
+      const cat = document.getElementById(prefix + '_category').value;
+      const prov = document.getElementById(prefix + '_provider').value;
+      const sum = document.getElementById(prefix + '_summary');
+      if (!sum) return;
+      const catLabel = cat === 'auth' ? 'Auth' : 'Charge';
+      const provLabel = prov.charAt(0).toUpperCase() + prov.slice(1);
+      sum.innerHTML = `<span class="tag cat">${catLabel}</span><span class="tag prov">${provLabel}</span>`;
+    }
+    document.getElementById('c1_category').addEventListener('change', () => updateSummary('c1'));
+    document.getElementById('c1_provider').addEventListener('change', () => updateSummary('c1'));
+    document.getElementById('c2_category').addEventListener('change', () => updateSummary('c2'));
+    document.getElementById('c2_provider').addEventListener('change', () => updateSummary('c2'));
+    updateSummary('c1');
+    updateSummary('c2');
+
+    async function checkCard(checker) {
+      const isFirst = checker === 'first';
+      const cardInput = document.getElementById(isFirst ? 'c1_card' : 'c2_card');
+      const categorySelect = document.getElementById(isFirst ? 'c1_category' : 'c2_category');
+      const providerSelect = document.getElementById(isFirst ? 'c1_provider' : 'c2_provider');
+      const button = document.getElementById(isFirst ? 'btn1' : 'btn2');
+      const resultId = isFirst ? 'result1' : 'result2';
+
+      const card = cardInput.value.trim();
+      const category = categorySelect.value;
+      const provider = providerSelect.value;
+
+      // Validate input
+      if (!card) {
+        showResult(resultId, 'error', '❌ Error', 'Please enter card details');
+        return;
+      }
+
+      if (!CARD_REGEX.test(card)) {
+        showResult(resultId, 'error', '❌ Invalid Format', 'Use format: number|month|year|cvv\nExample: 5333499418581618|03|2029|232');
+        return;
+      }
+
+      // Show loading state
+      button.disabled = true;
+      showResult(
+        resultId, 
+        'loading', 
+        '<span class="loading-spinner"></span> Processing...', 
+        'Sending card to validator...\nWaiting for response...\nThis may take a few seconds.',
+        `Checker: ${isFirst ? 'H4K3R Checker' : 'H4K3R CHECKER PRO'} | Gate: ${category} - ${provider}`
+      );
+
+      // Live elapsed timer
+      const statusEl = document.getElementById(resultId + '_status');
+      const baseMsg = statusEl.textContent;
+      const t0 = Date.now();
+      const tick = () => {
+        const s = Math.floor((Date.now() - t0) / 1000);
+        const mm = String(Math.floor(s / 60)).padStart(2, '0');
+        const ss = String(s % 60).padStart(2, '0');
+        statusEl.innerHTML = `${baseMsg} • Elapsed <span class="elapsed">${mm}:${ss}</span>`;
       };
-
-      update();
-      statusTimer = setInterval(update, 1000);
-    }
-
-    function stopStatusTimer(finalText) {
-      clearStatusTimer();
-      if (finalText) {
-        resultStatus.textContent = finalText;
-      }
-    }
-
-    function setPanelState(type, header, body, status) {
-      resultPanel.className = 'panel show' + (type ? ' ' + type : '');
-      resultHeader.textContent = header || '';
-      resultBody.textContent = body || '';
-      resultStatus.textContent = status || '';
-    }
-
-    function renderChips() {
-      const cfg = CONFIG[state.checker];
-      const categoryKeys = Object.keys(cfg.categories);
-      if (!categoryKeys.includes(state.category)) {
-        state.category = categoryKeys[0];
-      }
-
-      categoryChipsEl.innerHTML = '';
-      categoryKeys.forEach((catKey) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'chip' + (state.category === catKey ? ' active' : '');
-        btn.textContent = cfg.categories[catKey].label;
-        btn.addEventListener('click', () => {
-          state.category = catKey;
-          renderChips();
-        });
-        categoryChipsEl.appendChild(btn);
-      });
-
-      const providerMap = cfg.categories[state.category].providers;
-      const providerKeys = Object.keys(providerMap);
-      if (!providerKeys.includes(state.provider)) {
-        state.provider = providerKeys[0];
-      }
-
-      providerChipsEl.innerHTML = '';
-      providerKeys.forEach((provKey) => {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'chip small' + (state.provider === provKey ? ' active' : '');
-        btn.textContent = providerMap[provKey];
-        btn.addEventListener('click', () => {
-          state.provider = provKey;
-          renderChips();
-        });
-        providerChipsEl.appendChild(btn);
-      });
-    }
-
-    function updateCardVisuals() {
-      const cfg = CONFIG[state.checker];
-      checkerTitleEl.textContent = cfg.title;
-      checkerDescriptionEl.textContent = cfg.description;
-      tierTagEl.textContent = cfg.tierLabel;
-      tierTagEl.className = `tier-tag ${cfg.tierClass}`;
-      actionButton.textContent = cfg.buttonText;
-      actionButton.className = `cta-button ${cfg.buttonClass}`;
-    }
-
-    function setActiveChecker(newChecker) {
-      if (!CONFIG[newChecker]) return;
-      state.checker = newChecker;
-      state.category = null;
-      state.provider = null;
-      updateCardVisuals();
-      renderChips();
-
-      document.querySelectorAll('.mode-button').forEach((btn) => {
-        const isActive = btn.dataset.checker === newChecker;
-        btn.classList.toggle('active', isActive);
-        btn.setAttribute('aria-pressed', isActive ? 'true' : 'false');
-      });
-
-      setPanelState('', '', '', '');
-      resultPanel.className = 'panel';
-    }
-
-    async function runCheck() {
-      const cardValue = cardInput.value.trim();
-      if (!cardValue) {
-        setPanelState('error', '❌ Missing card', 'Please enter card details before checking.', '');
-        return;
-      }
-
-      if (!CARD_REGEX.test(cardValue)) {
-        setPanelState('error', '❌ Invalid format', 'Use format: number|month|year|cvv\nExample: 5333499418581618|03|2029|232', '');
-        return;
-      }
-
-      const checker = state.checker;
-      const category = state.category;
-      const provider = state.provider;
-
-      if (!category || !provider) {
-        setPanelState('error', '❌ Missing selection', 'Pick a category and provider to continue.', '');
-        return;
-      }
-
-      setPanelState('loading', 'Processing…', 'Sending card to Telegram validator…\nWaiting for gateway reply…', '');
-      startStatusTimer();
-      actionButton.disabled = true;
+      tick();
+      let timer = setInterval(tick, 500);
 
       try {
         const response = await fetch('/cc-check-advanced', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            card: cardValue,
+            card: card,
             checker: checker,
             gate_category: category,
             gate_provider: provider
@@ -693,37 +647,42 @@
         const data = await response.json();
 
         if (data.ok && data.raw) {
-          setPanelState('success', '✅ Response received', data.raw, '');
-          const elapsed = Math.floor((Date.now() - statusStart) / 1000);
-          stopStatusTimer(`Finished in ${elapsed}s • Telegram messages: ${data.messages || 1}`);
+          clearInterval(timer);
+          showResult(
+            resultId,
+            'success',
+            '✅ Response Received',
+            data.raw,
+            `Processed successfully | Messages: ${data.messages || 1}`
+          );
         } else {
+          clearInterval(timer);
           const errorMsg = data.detail || JSON.stringify(data);
-          setPanelState('error', '❌ Bot error', errorMsg, '');
-          const elapsed = Math.floor((Date.now() - statusStart) / 1000);
-          stopStatusTimer(`Completed in ${elapsed}s with an error`);
+          showResult(resultId, 'error', '❌ Error', errorMsg);
         }
-      } catch (err) {
-        setPanelState('error', '❌ Network error', `Failed to reach the server.\n${err.message}`, '');
-        const elapsed = Math.floor((Date.now() - statusStart) / 1000);
-        stopStatusTimer(`Stopped after ${elapsed}s due to network issues`);
+      } catch (error) {
+        clearInterval(timer);
+        showResult(
+          resultId, 
+          'error', 
+          '❌ Network Error', 
+          'Failed to connect to the server.\n' + error.message
+        );
       } finally {
-        actionButton.disabled = false;
+        button.disabled = false;
       }
     }
 
-    document.querySelectorAll('.mode-button').forEach((btn) => {
-      btn.addEventListener('click', () => setActiveChecker(btn.dataset.checker));
+    // Allow Enter key to submit
+    document.getElementById('c1_card').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') checkCard('first');
     });
 
-    actionButton.addEventListener('click', runCheck);
-
-    cardInput.addEventListener('keypress', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        runCheck();
-      }
+    document.getElementById('c2_card').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') checkCard('second');
     });
 
+    // Default view
     setActiveChecker('first');
   </script>
 </body>
