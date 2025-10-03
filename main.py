@@ -230,19 +230,30 @@ async def cc_check(req: CCCheckRequest):
         bot = await client.get_entity(CC_CHECKER_BOT)
 
         # Use conversation to wait for bot replies
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS) as conv:
+        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 10) as conv:
             # Send the command to the bot
             await conv.send_message(command)
             
             all_messages = []
-            # Collect all messages from bot (processing + result)
-            for i in range(5):
+            
+            # First message (usually processing)
+            try:
+                first_msg = await conv.get_response()
+                if first_msg.text:
+                    all_messages.append(first_msg.text)
+            except asyncio.TimeoutError:
+                raise HTTPException(status_code=504, detail="No response from bot")
+            
+            # Wait for actual result (bot takes time to process)
+            # Try to get multiple follow-up messages
+            for i in range(4):
                 try:
-                    timeout = TIMEOUT_SECONDS if i == 0 else 5
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=timeout)
+                    # Give more time for actual result (10 seconds)
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=10)
                     if msg.text:
                         all_messages.append(msg.text)
                 except asyncio.TimeoutError:
+                    # No more messages
                     break
                 except Exception:
                     break
@@ -250,13 +261,22 @@ async def cc_check(req: CCCheckRequest):
         if not all_messages:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
 
-        # Get the last message (final result) - skip processing messages
-        final_text = all_messages[-1] if all_messages else ""
+        # Find the actual result (skip processing messages)
+        final_text = ""
+        for msg in reversed(all_messages):
+            # Skip processing messages, get the actual result
+            if "Processing" not in msg and "🔄" not in msg:
+                final_text = msg
+                break
+        
+        # If no non-processing message found, use last message
+        if not final_text:
+            final_text = all_messages[-1]
         
         # Clean the response - remove unwanted parts
         cleaned_text = clean_cc_response(final_text)
         
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text}
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
