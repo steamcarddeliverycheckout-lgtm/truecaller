@@ -3,160 +3,390 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CC Dual Checker - Soft UI</title>
+  <title>H4K3R CC Checker Suite</title>
   <style>
     :root {
-      --bg1: #0f2027;
-      --bg2: #203a43;
-      --bg3: #2c5364;
-      --card-bg: rgba(255,255,255,0.08);
-      --card-border: rgba(255,255,255,0.12);
-      --text: #e7ecf1;
-      --muted: #b9c6d3;
-      --accent: #6c8cf5;
-      --accent2: #16d9e3;
-      --success: #59d38c;
-      --danger: #ef767a;
-      --yellow: #ffd166;
+      --bg-primary: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      --bg-secondary: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+      --card-bg: rgba(255, 255, 255, 0.15);
+      --card-hover: rgba(255, 255, 255, 0.25);
+      --text-primary: #ffffff;
+      --text-secondary: rgba(255, 255, 255, 0.8);
+      --text-muted: rgba(255, 255, 255, 0.6);
+      --accent-1: #ff6b6b;
+      --accent-2: #4ecdc4;
+      --success: #51cf66;
+      --warning: #ffd43b;
+      --shadow: 0 20px 40px rgba(0, 0, 0, 0.3);
+      --border-radius: 20px;
     }
-    * { box-sizing: border-box; }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
     body {
-      margin: 0; padding: 16px;
-      font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
-      background: linear-gradient(135deg, var(--bg1), var(--bg2) 50%, var(--bg3));
-      color: var(--text);
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--bg-primary);
       min-height: 100vh;
-      display: grid; place-items: center;
+      color: var(--text-primary);
+      overflow-x: hidden;
+      padding: 10px;
     }
+
     .container {
-      width: 100%; max-width: 980px;
-      display: grid; gap: 16px;
+      max-width: 100%;
+      margin: 0 auto;
+      padding: 20px 0;
     }
-    .title {
+
+    .header {
       text-align: center;
-      font-weight: 800; letter-spacing: 0.3px;
-      font-size: 22px; color: #fff;
+      margin-bottom: 30px;
     }
-    .subtitle { text-align: center; color: var(--muted); font-size: 13px; }
-    .grid {
-      display: grid; gap: 16px;
-      grid-template-columns: 1fr; 
+
+    .main-title {
+      font-size: clamp(28px, 6vw, 42px);
+      font-weight: 900;
+      background: linear-gradient(45deg, #fff, #ff6b6b, #4ecdc4);
+      background-size: 200% 200%;
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      background-clip: text;
+      animation: gradient 3s ease infinite;
+      margin-bottom: 8px;
     }
-    @media (min-width: 900px) {
-      .grid { grid-template-columns: 1fr 1fr; }
+
+    .subtitle {
+      font-size: 16px;
+      color: var(--text-secondary);
+      font-weight: 500;
     }
-    .card {
+
+    @keyframes gradient {
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
+    }
+
+    .checkers-grid {
+      display: grid;
+      gap: 25px;
+      grid-template-columns: 1fr;
+      max-width: 800px;
+      margin: 0 auto;
+    }
+
+    .checker-card {
       background: var(--card-bg);
-      border: 1px solid var(--card-border);
-      border-radius: 16px;
-      padding: 16px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
-      backdrop-filter: blur(6px);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      border-radius: var(--border-radius);
+      padding: 25px;
+      box-shadow: var(--shadow);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
     }
-    .card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
-    .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
-    @media (min-width: 480px) { .row.two { grid-template-columns: 1fr 1fr; } }
-    label { font-size: 12px; color: var(--muted); }
-    input, select {
+
+    .checker-card:hover {
+      background: var(--card-hover);
+      transform: translateY(-5px);
+      box-shadow: 0 30px 60px rgba(0, 0, 0, 0.4);
+    }
+
+    .checker-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 3px;
+      background: linear-gradient(90deg, var(--accent-1), var(--accent-2));
+    }
+
+    .checker-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 20px;
+    }
+
+    .checker-icon {
+      width: 40px;
+      height: 40px;
+      border-radius: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 20px;
+      margin-right: 15px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.2);
+    }
+
+    .checker-1 .checker-icon {
+      background: linear-gradient(135deg, var(--accent-1), #ff8a8a);
+    }
+
+    .checker-2 .checker-icon {
+      background: linear-gradient(135deg, var(--accent-2), #66d9e8);
+    }
+
+    .checker-title {
+      font-size: 20px;
+      font-weight: 700;
+      color: var(--text-primary);
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-label {
+      display: block;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .form-input {
       width: 100%;
-      padding: 12px 12px;
-      background: rgba(255,255,255,0.06);
-      border: 1px solid var(--card-border);
-      border-radius: 12px; color: var(--text);
-      outline: none; transition: .2s border;
-      font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+      padding: 15px 18px;
+      background: rgba(255, 255, 255, 0.1);
+      border: 2px solid rgba(255, 255, 255, 0.2);
+      border-radius: 15px;
+      color: var(--text-primary);
+      font-size: 16px;
+      font-family: 'JetBrains Mono', monospace;
+      transition: all 0.3s ease;
+      outline: none;
     }
-    input:focus, select:focus { border-color: var(--accent2); }
-    .btns { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); }
-    button {
-      padding: 12px 10px; border: 0; border-radius: 12px; color: #fff; cursor: pointer;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      box-shadow: 0 8px 18px rgba(22, 217, 227, 0.25);
-      font-weight: 700; font-size: 14px;
+
+    .form-input:focus {
+      border-color: var(--accent-2);
+      background: rgba(255, 255, 255, 0.2);
+      box-shadow: 0 0 0 4px rgba(78, 205, 196, 0.1);
     }
-    button.alt { background: linear-gradient(135deg, #7a7adb, #9f7aea); }
-    .pill {
-      display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px;
-      background: rgba(108, 140, 245, 0.18);
-      border: 1px solid rgba(108, 140, 245, 0.35);
-      color: #cfe0ff; margin-bottom: 8px;
+
+    .form-input::placeholder {
+      color: var(--text-muted);
     }
-    .result { white-space: pre-wrap; background: rgba(0,0,0,0.25); border-radius: 12px; padding: 12px; font-size: 13px; }
-    .muted { color: var(--muted); font-size: 12px; }
+
+    .form-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 15px;
+    }
+
+    @media (max-width: 480px) {
+      .form-row {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    .btn {
+      padding: 15px 25px;
+      border: none;
+      border-radius: 15px;
+      font-size: 16px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      position: relative;
+      overflow: hidden;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent-1), #ff8a8a);
+      color: white;
+      box-shadow: 0 10px 25px rgba(255, 107, 107, 0.4);
+    }
+
+    .btn-secondary {
+      background: linear-gradient(135deg, var(--accent-2), #66d9e8);
+      color: white;
+      box-shadow: 0 10px 25px rgba(78, 205, 196, 0.4);
+    }
+
+    .btn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 15px 35px rgba(0, 0, 0, 0.3);
+    }
+
+    .btn:active {
+      transform: translateY(0);
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 15px;
+      margin-top: 20px;
+    }
+
+    .result-container {
+      margin-top: 20px;
+      padding: 0;
+      border-radius: 15px;
+      background: rgba(0, 0, 0, 0.2);
+      backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.1);
+      min-height: 60px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .result-text {
+      padding: 20px;
+      font-size: 14px;
+      line-height: 1.6;
+      white-space: pre-wrap;
+      font-family: 'JetBrains Mono', monospace;
+      color: var(--text-primary);
+    }
+
+    .loading {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 15px;
+      color: var(--text-secondary);
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255, 255, 255, 0.3);
+      border-top: 3px solid var(--accent-2);
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .progress-text {
+      font-size: 14px;
+      font-weight: 500;
+      text-align: center;
+    }
+
+    .status-indicator {
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      margin-right: 8px;
+    }
+
+    .status-success { background: var(--success); }
+    .status-error { background: var(--accent-1); }
+    .status-warning { background: var(--warning); }
   </style>
 </head>
 <body>
   <div class="container">
-    <div>
-      <div class="title">💳 CC Dual Checker</div>
-      <div class="subtitle">Two bots • Auth, Charge, Killer • Mobile-first Soft UI</div>
+    <div class="header">
+      <h1 class="main-title">🔥 H4K3R CC Suite</h1>
+      <p class="subtitle">Premium Card Validation System</p>
     </div>
 
-    <div class="grid">
-      <!-- First Checker (niggacheck_bot) -->
-      <div class="card">
-        <div class="pill">Checker 1 • @niggacheck_bot</div>
-        <h3>Auth & Charge</h3>
-        <div class="row">
-          <label>Card (number|mm|yyyy|cvv)</label>
-          <input id="c1_card" placeholder="5333499418581618|03|2029|232" />
+    <div class="checkers-grid">
+      <!-- H4K3R Checker -->
+      <div class="checker-card checker-1">
+        <div class="checker-header">
+          <div class="checker-icon">🚀</div>
+          <div class="checker-title">H4K3R Checker</div>
         </div>
-        <div class="row two">
-          <div>
-            <label>Category</label>
-            <select id="c1_category">
-              <option value="auth">Auth</option>
-              <option value="charge">Charge</option>
+        
+        <div class="form-group">
+          <label class="form-label">Card Details</label>
+          <input class="form-input" id="c1_card" placeholder="5333499418581618|03|2029|232" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Gate Type</label>
+            <select class="form-input" id="c1_category" onchange="updateC1Providers()">
+              <option value="auth">Auth Gate</option>
+              <option value="charge">Charge Gate</option>
             </select>
           </div>
-          <div>
-            <label>Provider</label>
-            <select id="c1_provider">
+          <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select class="form-input" id="c1_provider">
               <option value="stripe">Stripe</option>
               <option value="braintree">Braintree</option>
-              <option value="paypal">PayPal</option>
-              <option value="shopify">Shopify</option>
             </select>
           </div>
         </div>
-        <div class="btns" style="margin-top: 10px;">
-          <button onclick="runChecker('first')">Run Checker 1</button>
-          <button class="alt" onclick="clearResult('c1')">Clear</button>
+
+        <div class="actions">
+          <button class="btn btn-primary" onclick="runChecker('first')" id="c1_btn">
+            <span id="c1_btn_text">Check Card</span>
+          </button>
+          <button class="btn btn-secondary" onclick="clearResult('c1')">Clear</button>
         </div>
-        <div id="c1_out" class="result" style="margin-top: 10px;"></div>
-        <div id="c1_meta" class="muted" style="margin-top: 6px;"></div>
+
+        <div class="result-container" id="c1_result">
+          <div class="result-text" id="c1_text">Ready to check cards...</div>
+        </div>
       </div>
 
-      <!-- Second Checker (Jackthe_ripper_bot) -->
-      <div class="card">
-        <div class="pill">Checker 2 • @Jackthe_ripper_bot</div>
-        <h3>Auth, Charge & Killer</h3>
-        <div class="row">
-          <label>Card (number|mm|yyyy|cvv)</label>
-          <input id="c2_card" placeholder="5333499418581618|03|2029|232" />
+      <!-- H4K3R CHECKER PRO -->
+      <div class="checker-card checker-2">
+        <div class="checker-header">
+          <div class="checker-icon">⚡</div>
+          <div class="checker-title">H4K3R CHECKER PRO</div>
         </div>
-        <div class="row two">
-          <div>
-            <label>Category</label>
-            <select id="c2_category" onchange="syncProviders()">
-              <option value="auth">Auth</option>
-              <option value="charge">Charge</option>
-              <option value="killer">CC Killer</option>
+        
+        <div class="form-group">
+          <label class="form-label">Card Details</label>
+          <input class="form-input" id="c2_card" placeholder="5333499418581618|03|2029|232" />
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label class="form-label">Gate Type</label>
+            <select class="form-input" id="c2_category" onchange="updateC2Providers()">
+              <option value="auth">Auth Gate</option>
+              <option value="charge">Charge Gate</option>
             </select>
           </div>
-          <div>
-            <label>Provider</label>
-            <select id="c2_provider">
-              <!-- dynamic based on category -->
+          <div class="form-group">
+            <label class="form-label">Provider</label>
+            <select class="form-input" id="c2_provider">
+              <option value="braintree">Braintree</option>
+              <option value="stripe">Stripe</option>
             </select>
           </div>
         </div>
-        <div class="btns" style="margin-top: 10px;">
-          <button onclick="runChecker('second')">Run Checker 2</button>
-          <button class="alt" onclick="clearResult('c2')">Clear</button>
+
+        <div class="actions">
+          <button class="btn btn-secondary" onclick="runChecker('second')" id="c2_btn">
+            <span id="c2_btn_text">Check Card</span>
+          </button>
+          <button class="btn btn-primary" onclick="clearResult('c2')">Clear</button>
         </div>
-        <div id="c2_out" class="result" style="margin-top: 10px;"></div>
-        <div id="c2_meta" class="muted" style="margin-top: 6px;"></div>
+
+        <div class="result-container" id="c2_result">
+          <div class="result-text" id="c2_text">Ready to check cards...</div>
+        </div>
       </div>
     </div>
   </div>
@@ -164,79 +394,131 @@
   <script>
     const CARD_RE = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
 
-    function setProvidersForSecond(category) {
-      const p = document.getElementById('c2_provider');
-      p.innerHTML = '';
+    // Update providers for first checker
+    function updateC1Providers() {
+      const category = document.getElementById('c1_category').value;
+      const provider = document.getElementById('c1_provider');
+      provider.innerHTML = '';
+      
       if (category === 'auth') {
-        p.append(new Option('Braintree (/br)', 'braintree'));
-        p.append(new Option('Stripe (/chk)', 'stripe'));
+        provider.add(new Option('Stripe', 'stripe'));
+        provider.add(new Option('Braintree', 'braintree'));
       } else if (category === 'charge') {
-        p.append(new Option('Braintree (/ch)', 'braintree'));
-        p.append(new Option('Stripe (/sk)', 'stripe'));
-      } else if (category === 'killer') {
-        p.append(new Option('Killer (/kd)', 'killer'));
+        provider.add(new Option('PayPal', 'paypal'));
+        provider.add(new Option('Shopify', 'shopify'));
       }
     }
-    function syncProviders() {
-      const cat = document.getElementById('c2_category').value;
-      setProvidersForSecond(cat);
-    }
-    // init
-    setProvidersForSecond('auth');
 
-    function show(outId, metaId, text, meta) {
-      const out = document.getElementById(outId);
-      out.textContent = text;
-      const m = document.getElementById(metaId);
-      m.textContent = meta || '';
+    // Update providers for second checker (PRO)
+    function updateC2Providers() {
+      const category = document.getElementById('c2_category').value;
+      const provider = document.getElementById('c2_provider');
+      provider.innerHTML = '';
+      
+      if (category === 'auth') {
+        provider.add(new Option('Braintree', 'braintree'));
+        provider.add(new Option('Stripe', 'stripe'));
+      } else if (category === 'charge') {
+        provider.add(new Option('Braintree', 'braintree'));
+        provider.add(new Option('Stripe', 'stripe'));
+      }
     }
+
+    // Initialize providers
+    updateC1Providers();
+    updateC2Providers();
+
+    function showResult(prefix, content, isError = false) {
+      const resultEl = document.getElementById(`${prefix}_result`);
+      const textEl = document.getElementById(`${prefix}_text`);
+      
+      if (content === 'loading') {
+        resultEl.innerHTML = `
+          <div class="loading">
+            <div class="spinner"></div>
+            <div class="progress-text">
+              <span class="status-indicator status-warning"></span>
+              Processing card validation...
+            </div>
+          </div>
+        `;
+      } else if (content === 'ready') {
+        textEl.textContent = 'Ready to check cards...';
+        resultEl.innerHTML = `<div class="result-text" id="${prefix}_text">Ready to check cards...</div>`;
+      } else {
+        const statusClass = isError ? 'status-error' : 'status-success';
+        const statusText = isError ? 'Error' : 'Success';
+        
+        resultEl.innerHTML = `
+          <div class="result-text">
+            <div style="margin-bottom: 10px;">
+              <span class="status-indicator ${statusClass}"></span>
+              <strong>${statusText}</strong>
+            </div>
+            ${content}
+          </div>
+        `;
+      }
+    }
+
     function clearResult(prefix) {
-      show(prefix + '_out', prefix + '_meta', '', '');
+      showResult(prefix, 'ready');
     }
 
     async function runChecker(which) {
-      let card, category, provider, outId, metaId;
-      if (which === 'first') {
-        card = document.getElementById('c1_card').value.trim();
-        category = document.getElementById('c1_category').value;
-        provider = document.getElementById('c1_provider').value;
-        outId = 'c1_out'; metaId = 'c1_meta';
-      } else {
-        card = document.getElementById('c2_card').value.trim();
-        category = document.getElementById('c2_category').value;
-        provider = document.getElementById('c2_provider').value;
-        outId = 'c2_out'; metaId = 'c2_meta';
-      }
+      const isFirst = which === 'first';
+      const prefix = isFirst ? 'c1' : 'c2';
+      
+      const card = document.getElementById(`${prefix}_card`).value.trim();
+      const category = document.getElementById(`${prefix}_category`).value;
+      const provider = document.getElementById(`${prefix}_provider`).value;
+      
+      const btn = document.getElementById(`${prefix}_btn`);
+      const btnText = document.getElementById(`${prefix}_btn_text`);
 
       if (!CARD_RE.test(card)) {
-        show(outId, metaId, 'Invalid card format. Use number|mm|yyyy|cvv', '');
+        showResult(prefix, 'Invalid card format. Use: number|mm|yyyy|cvv', true);
         return;
       }
 
-      show(outId, metaId, '⏳ Processing...', '');
+      // Show loading state
+      showResult(prefix, 'loading');
+      btn.disabled = true;
+      btnText.textContent = 'Checking...';
+
       try {
+        const startTime = Date.now();
+        
         const res = await fetch('/cc-check-advanced', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             card: card,
-            checker: which === 'first' ? 'first' : 'second',
+            checker: isFirst ? 'first' : 'second',
             gate_category: category,
             gate_provider: provider
           })
         });
+
         const data = await res.json();
+        const duration = ((Date.now() - startTime) / 1000).toFixed(1);
+        
         if (data.ok) {
-          show(outId, metaId, data.raw, `messages: ${data.messages}`);
+          const result = `${data.raw}\n\n⏱️ Response time: ${duration}s`;
+          showResult(prefix, result, false);
         } else {
-          show(outId, metaId, `❌ ${data.detail || 'Error'}`, '');
+          showResult(prefix, `❌ ${data.detail || 'Unknown error'}`, true);
         }
       } catch (e) {
-        show(outId, metaId, '❌ Network error', e.message || '');
+        showResult(prefix, `❌ Network error: ${e.message}`, true);
+      } finally {
+        btn.disabled = false;
+        btnText.textContent = 'Check Card';
       }
     }
   </script>
 </body>
 </html>
+
 
 
