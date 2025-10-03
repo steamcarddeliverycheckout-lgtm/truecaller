@@ -228,55 +228,60 @@ async def cc_check(req: CCCheckRequest):
     try:
         # Resolve bot entity
         bot = await client.get_entity(CC_CHECKER_BOT)
-
-        # Use conversation to wait for bot replies
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 10) as conv:
+        bot_id = bot.id
+        
+        # Storage for messages from bot
+        collected_messages = []
+        message_event = asyncio.Event()
+        
+        # Event handler to collect ALL messages from this bot
+        @client.on(events.NewMessage(from_users=bot_id))
+        async def message_handler(event):
+            if event.message.text:
+                collected_messages.append(event.message.text)
+                # If message contains result indicators, set event
+                if any(indicator in event.message.text for indicator in ['APPROVED', 'DECLINED', 'CHARGED', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', 'Response:', 'CVV', 'Gateway:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:']):
+                    message_event.set()
+        
+        try:
             # Send the command to the bot
-            await conv.send_message(command)
+            await client.send_message(bot, command)
             
-            all_messages = []
-            
-            # First message (usually processing)
+            # Wait for result message (with indicators) or timeout after 30 seconds
             try:
-                first_msg = await conv.get_response()
-                if first_msg.text:
-                    all_messages.append(first_msg.text)
+                await asyncio.wait_for(message_event.wait(), timeout=30)
+                # Wait a bit more for any follow-up messages
+                await asyncio.sleep(2)
             except asyncio.TimeoutError:
-                raise HTTPException(status_code=504, detail="No response from bot")
+                # If no result indicators found, just wait and hope we got something
+                pass
             
-            # Wait for actual result (bot takes time to process)
-            # Try to get multiple follow-up messages
-            for i in range(4):
-                try:
-                    # Give more time for actual result (10 seconds)
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=10)
-                    if msg.text:
-                        all_messages.append(msg.text)
-                except asyncio.TimeoutError:
-                    # No more messages
-                    break
-                except Exception:
-                    break
-
-        if not all_messages:
+        finally:
+            # Remove the event handler
+            client.remove_event_handler(message_handler)
+        
+        if not collected_messages:
             raise HTTPException(status_code=502, detail="No reply text received from bot.")
 
         # Find the actual result (skip processing messages)
         final_text = ""
-        for msg in reversed(all_messages):
+        for msg in reversed(collected_messages):
             # Skip processing messages, get the actual result
-            if "Processing" not in msg and "🔄" not in msg:
+            if "Processing" not in msg and "🔄" not in msg and len(msg) > 50:
                 final_text = msg
                 break
         
         # If no non-processing message found, use last message
+        if not final_text and collected_messages:
+            final_text = collected_messages[-1]
+        
         if not final_text:
-            final_text = all_messages[-1]
+            raise HTTPException(status_code=502, detail="No valid response received from bot.")
         
         # Clean the response - remove unwanted parts
         cleaned_text = clean_cc_response(final_text)
         
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "total_messages": len(collected_messages)}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
