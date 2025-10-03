@@ -1,497 +1,242 @@
-import os
-import re
-import asyncio
-from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
-from fastapi.staticfiles import StaticFiles
-from telethon import TelegramClient, errors, events
-from telethon.sessions import StringSession
-
-# ----------------------------
-# Config (Render ENV)
-# ----------------------------
-API_ID = int(os.environ.get("TELEGRAM_API_ID") or 0)
-API_HASH = os.environ.get("TELEGRAM_API_HASH")
-STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
-
-# Target bots
-TRUECALLER_BOT = "Truecaller_sbot"
-CC_CHECKER_BOT = "niggacheck_bot"
-JACK_CHECKER_BOT = "Jackthe_ripper_bot"
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
-
-# ----------------------------
-# Telegram Client
-# ----------------------------
-if not (API_ID and API_HASH and STRING_SESSION):
-    TELEGRAM_READY = False
-    client = None
-else:
-    TELEGRAM_READY = True
-    client = TelegramClient(StringSession(STRING_SESSION), API_ID, API_HASH)
-
-# ----------------------------
-# FastAPI app
-# ----------------------------
-app = FastAPI(title="Truecaller_sbot Proxy API")
-
-class LookupRequest(BaseModel):
-    number: str
-
-class CCCheckRequest(BaseModel):
-    card: str
-    gate_type: str  # 'stripe', 'braintree', 'paypal', 'shopify'
-
-class AdvancedCCRequest(BaseModel):
-    card: str
-    checker: str  # 'checker1' or 'checker2'
-    gate_category: str  # 'auth', 'charge', 'killer'
-    gate_provider: str  # provider name based on checker
-
-async def ensure_client_started():
-    if not TELEGRAM_READY:
-        raise RuntimeError("Telegram credentials/session missing.")
-    if not client.is_connected():
-        await client.connect()
-    if not await client.is_user_authorized():
-        raise RuntimeError("Telegram session not authorized. Recreate STRING_SESSION.")
-
-# ----------------------------
-# Parser for @Truecaller_sbot
-# Example:
-# ✅ Truecaller Details Revealed.!!
-# ━━━━━━━━━━━━━━━━━━━━━━
-# 📱  Carrier: Not Found
-# 🌍 Country: Not Found
-# 🌐 International Format: Not Found
-# 📞 Local Format: Not Found
-# 📍 Location: Not Found
-# 🕒 Timezones: Not Found
-# 🔍 Truecaller Name: usman pasha
-# 👤 Username: No name found
-# 🔎 Number search: 3
-# ----------------------------
-def parse_sbot_reply(text: str):
-    s = text.replace("\r\n", "\n")
-    out = {}
-
-    def pick(pattern, cast=None):
-        m = re.search(pattern, s, flags=re.IGNORECASE)
-        if not m:
-            return None
-        val = m.group(1).strip()
-        if cast:
-            try:
-                return cast(val)
-            except Exception:
-                return val
-        return val
-
-    out["carrier"] = pick(r"📱\s*Carrier:\s*(.+)")
-    out["country"] = pick(r"🌍\s*Country:\s*(.+)")
-    out["international_format"] = pick(r"🌐\s*International\s*Format:\s*(.+)")
-    out["local_format"] = pick(r"📞\s*Local\s*Format:\s*(.+)")
-    out["location"] = pick(r"📍\s*Location:\s*(.+)")
-    out["timezones"] = pick(r"🕒\s*Timezones?:\s*(.+)")
-    out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
-    out["username"] = pick(r"👤\s*Username:\s*(.+)")
-    out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
-    out["raw"] = text
-    return out
-
-# ----------------------------
-# Parser for CC checker bot response
-# ----------------------------
-def clean_cc_response(text: str):
-    """Extract only the important parts from CC checker response"""
-    if not text:
-        return ""
-    
-    lines = text.split('\n')
-    important_lines = []
-    
-    # Skip lines to exclude
-    skip_keywords = ['🔄', 'Processing', '⚡', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot']
-    
-    # Lines to keep
-    keep_keywords = ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 
-                     'Card:', 'Gateway:', 'Response:', 'Info:', 'Issuer:', 'Country:',
-                     'APPROVED', 'DECLINED', 'CHARGED', 'CVV', 'LIVE', 
-                     '✅', '❌', '🌠', '💳', '🔥']
-    
-    for line in lines:
-        line = line.strip()
-        
-        # Skip empty lines
-        if not line:
-            continue
-            
-        # Skip unwanted lines
-        if any(skip in line for skip in skip_keywords):
-            continue
-        
-        # Keep important lines or lines with status indicators
-        if any(keep in line for keep in keep_keywords):
-            important_lines.append(line)
-        # Also keep separator lines
-        elif line.startswith('━'):
-            important_lines.append(line)
-    
-    result = '\n'.join(important_lines)
-    
-    # If cleaning removed everything, return original
-    return result if result else text
-
-# ----------------------------
-# Helpers for CC checker flow
-# ----------------------------
-def extract_message_text(msg):
-    """Safely extract textual content from a Telethon Message (message or caption)."""
-    if not msg:
-        return ""
-    return getattr(msg, "raw_text", None) or getattr(msg, "message", None) or getattr(msg, "text", None) or ""
-
-def is_processing_message(text: str) -> bool:
-    if not text:
-        return False
-    s = text.lower()
-    return ("processing" in s) or ("🔄" in text) or ("loading" in s) or ("working" in s)
-
-def is_final_cc_result(text: str) -> bool:
-    """Heuristic to detect when a CC checker reply is a final result, not a progress update."""
-    if not text:
-        return False
-    if is_processing_message(text):
-        return False
-    # Common indicators the result is finalized
-    indicators_any = [
-        "𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:", "Response:", "APPROVED", "DECLINED", "CHARGED",
-        "𝗖𝗮𝗿𝗱:", "Card:", "𝐆𝐚𝐭𝐞𝐰𝐚𝐲:", "Gateway:",
-        "Issuer:", "𝐈𝐬𝐬𝐮𝐞𝐫:", "Country:", "𝐂𝐨𝐮𝐧𝐭𝐫𝐲:", "CVV", "LIVE", "DEAD",
-        "✅", "❌"
-    ]
-    return any(k in text for k in indicators_any)
-
-# ----------------------------
-# /lookup endpoint
-# ----------------------------
-@app.post("/lookup")
-async def lookup(req: LookupRequest):
-    if not TELEGRAM_READY:
-        raise HTTPException(status_code=500, detail="Telegram not configured.")
-
-    cleaned = re.sub(r"[ \-()]", "", req.number.strip())
-    if not re.match(r"^\+?\d{6,15}$", cleaned):
-        raise HTTPException(status_code=400, detail="Invalid phone number format.")
-
-    try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        # Resolve bot entity (more robust)
-        bot = await client.get_entity(TRUECALLER_BOT)
-
-        # Use conversation to wait for bot replies
-        async with client.conversation(bot, timeout=TIMEOUT_SECONDS) as conv:
-            # Send the number to the bot
-            await conv.send_message(req.number.strip())
-            
-            # Get the first reply
-            response = await conv.get_response()
-            
-            texts = []
-            if response.text:
-                texts.append(response.text)
-            
-            # Collect up to 2 quick follow-ups (bots sometimes split replies)
-            for _ in range(2):
-                try:
-                    msg = await asyncio.wait_for(conv.get_response(), timeout=2)
-                    if msg.text:
-                        texts.append(msg.text)
-                except asyncio.TimeoutError:
-                    break
-                except Exception:
-                    break
-
-        if not texts:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
-
-        full_text = "\n\n".join(texts)
-
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    except errors.FloodWaitError as e:
-        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
-
-    parsed = parse_sbot_reply(full_text)
-    return {"ok": True, "data": parsed, "raw": full_text}
-
-# ----------------------------
-# /cc-check endpoint
-# ----------------------------
-@app.post("/cc-check")
-async def cc_check(req: CCCheckRequest):
-    if not TELEGRAM_READY:
-        raise HTTPException(status_code=500, detail="Telegram not configured.")
-
-    # Validate card format (number|month|year|cvv)
-    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
-    if not re.match(card_pattern, req.card.strip()):
-        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
-
-    # Map gate type to command
-    gate_commands = {
-        "stripe": "/st",
-        "braintree": "/ba",
-        "paypal": "/pp",
-        "shopify": "/sp"
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CC Dual Checker - Soft UI</title>
+  <style>
+    :root {
+      --bg1: #0f2027;
+      --bg2: #203a43;
+      --bg3: #2c5364;
+      --card-bg: rgba(255,255,255,0.08);
+      --card-border: rgba(255,255,255,0.12);
+      --text: #e7ecf1;
+      --muted: #b9c6d3;
+      --accent: #6c8cf5;
+      --accent2: #16d9e3;
+      --success: #59d38c;
+      --danger: #ef767a;
+      --yellow: #ffd166;
     }
-    
-    if req.gate_type not in gate_commands:
-        raise HTTPException(status_code=400, detail="Invalid gate type. Use: stripe, braintree, paypal, or shopify")
-    
-    command = f"{gate_commands[req.gate_type]} {req.card.strip()}"
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 16px;
+      font-family: ui-sans-serif, -apple-system, Segoe UI, Roboto, Helvetica, Arial;
+      background: linear-gradient(135deg, var(--bg1), var(--bg2) 50%, var(--bg3));
+      color: var(--text);
+      min-height: 100vh;
+      display: grid; place-items: center;
+    }
+    .container {
+      width: 100%; max-width: 980px;
+      display: grid; gap: 16px;
+    }
+    .title {
+      text-align: center;
+      font-weight: 800; letter-spacing: 0.3px;
+      font-size: 22px; color: #fff;
+    }
+    .subtitle { text-align: center; color: var(--muted); font-size: 13px; }
+    .grid {
+      display: grid; gap: 16px;
+      grid-template-columns: 1fr; 
+    }
+    @media (min-width: 900px) {
+      .grid { grid-template-columns: 1fr 1fr; }
+    }
+    .card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 16px;
+      padding: 16px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.25), inset 0 1px 0 rgba(255,255,255,0.05);
+      backdrop-filter: blur(6px);
+    }
+    .card h3 { margin: 0 0 8px; font-size: 16px; font-weight: 700; }
+    .row { display: grid; gap: 10px; grid-template-columns: 1fr; }
+    @media (min-width: 480px) { .row.two { grid-template-columns: 1fr 1fr; } }
+    label { font-size: 12px; color: var(--muted); }
+    input, select {
+      width: 100%;
+      padding: 12px 12px;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid var(--card-border);
+      border-radius: 12px; color: var(--text);
+      outline: none; transition: .2s border;
+      font-size: 14px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+    input:focus, select:focus { border-color: var(--accent2); }
+    .btns { display: grid; gap: 10px; grid-template-columns: repeat(2, 1fr); }
+    button {
+      padding: 12px 10px; border: 0; border-radius: 12px; color: #fff; cursor: pointer;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      box-shadow: 0 8px 18px rgba(22, 217, 227, 0.25);
+      font-weight: 700; font-size: 14px;
+    }
+    button.alt { background: linear-gradient(135deg, #7a7adb, #9f7aea); }
+    .pill {
+      display: inline-block; padding: 6px 10px; border-radius: 999px; font-size: 12px;
+      background: rgba(108, 140, 245, 0.18);
+      border: 1px solid rgba(108, 140, 245, 0.35);
+      color: #cfe0ff; margin-bottom: 8px;
+    }
+    .result { white-space: pre-wrap; background: rgba(0,0,0,0.25); border-radius: 12px; padding: 12px; font-size: 13px; }
+    .muted { color: var(--muted); font-size: 12px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div>
+      <div class="title">💳 CC Dual Checker</div>
+      <div class="subtitle">Two bots • Auth, Charge, Killer • Mobile-first Soft UI</div>
+    </div>
 
-    try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+    <div class="grid">
+      <!-- First Checker (niggacheck_bot) -->
+      <div class="card">
+        <div class="pill">Checker 1 • @niggacheck_bot</div>
+        <h3>Auth & Charge</h3>
+        <div class="row">
+          <label>Card (number|mm|yyyy|cvv)</label>
+          <input id="c1_card" placeholder="5333499418581618|03|2029|232" />
+        </div>
+        <div class="row two">
+          <div>
+            <label>Category</label>
+            <select id="c1_category">
+              <option value="auth">Auth</option>
+              <option value="charge">Charge</option>
+            </select>
+          </div>
+          <div>
+            <label>Provider</label>
+            <select id="c1_provider">
+              <option value="stripe">Stripe</option>
+              <option value="braintree">Braintree</option>
+              <option value="paypal">PayPal</option>
+              <option value="shopify">Shopify</option>
+            </select>
+          </div>
+        </div>
+        <div class="btns" style="margin-top: 10px;">
+          <button onclick="runChecker('first')">Run Checker 1</button>
+          <button class="alt" onclick="clearResult('c1')">Clear</button>
+        </div>
+        <div id="c1_out" class="result" style="margin-top: 10px;"></div>
+        <div id="c1_meta" class="muted" style="margin-top: 6px;"></div>
+      </div>
 
-    try:
-        # Resolve bot entity
-        bot = await client.get_entity(CC_CHECKER_BOT)
+      <!-- Second Checker (Jackthe_ripper_bot) -->
+      <div class="card">
+        <div class="pill">Checker 2 • @Jackthe_ripper_bot</div>
+        <h3>Auth, Charge & Killer</h3>
+        <div class="row">
+          <label>Card (number|mm|yyyy|cvv)</label>
+          <input id="c2_card" placeholder="5333499418581618|03|2029|232" />
+        </div>
+        <div class="row two">
+          <div>
+            <label>Category</label>
+            <select id="c2_category" onchange="syncProviders()">
+              <option value="auth">Auth</option>
+              <option value="charge">Charge</option>
+              <option value="killer">CC Killer</option>
+            </select>
+          </div>
+          <div>
+            <label>Provider</label>
+            <select id="c2_provider">
+              <!-- dynamic based on category -->
+            </select>
+          </div>
+        </div>
+        <div class="btns" style="margin-top: 10px;">
+          <button onclick="runChecker('second')">Run Checker 2</button>
+          <button class="alt" onclick="clearResult('c2')">Clear</button>
+        </div>
+        <div id="c2_out" class="result" style="margin-top: 10px;"></div>
+        <div id="c2_meta" class="muted" style="margin-top: 6px;"></div>
+      </div>
+    </div>
+  </div>
 
-        all_messages = []
-        final_text = ""
-        
-        # Use conversation with proper exception handling
-        # Some bots edit their messages in-place, so we will poll the latest
-        # messages from the bot dialog if needed to detect a final result.
-        try:
-            async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20, exclusive=False) as conv:
-                # Send the command to the bot
-                await conv.send_message(command)
-                
-                # Phase 1: Wait up to 15s for a non-processing message via conversation queue
-                phase1_deadline = asyncio.get_event_loop().time() + 15
-                while asyncio.get_event_loop().time() < phase1_deadline:
-                    try:
-                        msg = await asyncio.wait_for(conv.get_response(), timeout=3)
-                        text = extract_message_text(getattr(msg, 'message', msg))
-                        if text:
-                            all_messages.append(text)
-                            if is_final_cc_result(text):
-                                final_text = text
-                                break
-                    except asyncio.TimeoutError:
-                        # keep trying in loop until deadline
-                        continue
-                    except Exception as e:
-                        # Ignore InvalidStateError and similar conversation errors
-                        if "invalid state" not in str(e).lower():
-                            break
-                        continue
-        except Exception as conv_error:
-            # If conversation fails, continue to polling
-            pass
+  <script>
+    const CARD_RE = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
 
-        # Phase 2: If still not final, poll recent messages from the bot chat
-        # Some bots edit messages or send outside the conversation queue
-        if not final_text:
-            poll_deadline = asyncio.get_event_loop().time() + 20
-            while asyncio.get_event_loop().time() < poll_deadline:
-                try:
-                    async for m in client.iter_messages(bot, limit=5):
-                        t = extract_message_text(m)
-                        if t and t not in all_messages:
-                            all_messages.append(t)
-                        if is_final_cc_result(t):
-                            final_text = t
-                            break
-                    if final_text:
-                        break
-                    await asyncio.sleep(2)
-                except Exception:
-                    await asyncio.sleep(2)
+    function setProvidersForSecond(category) {
+      const p = document.getElementById('c2_provider');
+      p.innerHTML = '';
+      if (category === 'auth') {
+        p.append(new Option('Braintree (/br)', 'braintree'));
+        p.append(new Option('Stripe (/chk)', 'stripe'));
+      } else if (category === 'charge') {
+        p.append(new Option('Braintree (/ch)', 'braintree'));
+        p.append(new Option('Stripe (/sk)', 'stripe'));
+      } else if (category === 'killer') {
+        p.append(new Option('Killer (/kd)', 'killer'));
+      }
+    }
+    function syncProviders() {
+      const cat = document.getElementById('c2_category').value;
+      setProvidersForSecond(cat);
+    }
+    // init
+    setProvidersForSecond('auth');
 
-        if not all_messages:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+    function show(outId, metaId, text, meta) {
+      const out = document.getElementById(outId);
+      out.textContent = text;
+      const m = document.getElementById(metaId);
+      m.textContent = meta || '';
+    }
+    function clearResult(prefix) {
+      show(prefix + '_out', prefix + '_meta', '', '');
+    }
 
-        if not final_text:
-            # As a fallback, pick the last non-processing message if any
-            for msg in reversed(all_messages):
-                if not is_processing_message(msg):
-                    final_text = msg
-                    break
-            if not final_text:
-                final_text = all_messages[-1]
-        
-        # Clean the response - remove unwanted parts
-        cleaned_text = clean_cc_response(final_text)
-        
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
+    async function runChecker(which) {
+      let card, category, provider, outId, metaId;
+      if (which === 'first') {
+        card = document.getElementById('c1_card').value.trim();
+        category = document.getElementById('c1_category').value;
+        provider = document.getElementById('c1_provider').value;
+        outId = 'c1_out'; metaId = 'c1_meta';
+      } else {
+        card = document.getElementById('c2_card').value.trim();
+        category = document.getElementById('c2_category').value;
+        provider = document.getElementById('c2_provider').value;
+        outId = 'c2_out'; metaId = 'c2_meta';
+      }
 
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    except errors.FloodWaitError as e:
-        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+      if (!CARD_RE.test(card)) {
+        show(outId, metaId, 'Invalid card format. Use number|mm|yyyy|cvv', '');
+        return;
+      }
 
-# ----------------------------
-# /cc-check-advanced endpoint (Two checkers)
-# ----------------------------
-@app.post("/cc-check-advanced")
-async def cc_check_advanced(req: AdvancedCCRequest):
-    if not TELEGRAM_READY:
-        raise HTTPException(status_code=500, detail="Telegram not configured.")
+      show(outId, metaId, '⏳ Processing...', '');
+      try {
+        const res = await fetch('/cc-check-advanced', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            card: card,
+            checker: which === 'first' ? 'first' : 'second',
+            gate_category: category,
+            gate_provider: provider
+          })
+        });
+        const data = await res.json();
+        if (data.ok) {
+          show(outId, metaId, data.raw, `messages: ${data.messages}`);
+        } else {
+          show(outId, metaId, `❌ ${data.detail || 'Error'}`, '');
+        }
+      } catch (e) {
+        show(outId, metaId, '❌ Network error', e.message || '');
+      }
+    }
+  </script>
+</body>
+</html>
 
-    # Validate card format
-    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
-    if not re.match(card_pattern, req.card.strip()):
-        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
 
-    checker = req.checker.lower()
-    category = req.gate_category.lower()
-    provider = req.gate_provider.lower()
-
-    # Determine bot and command
-    bot_username = None
-    command = None
-    
-    if checker == "checker1":
-        bot_username = CC_CHECKER_BOT
-        if category == "auth":
-            if provider == "stripe":
-                command = f"/st {req.card.strip()}"
-            elif provider == "braintree":
-                command = f"/ba {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Auth")
-        elif category == "charge":
-            if provider == "paypal":
-                command = f"/pp {req.card.strip()}"
-            elif provider == "shopify":
-                command = f"/sp {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 1 Charge")
-        elif category == "killer":
-            command = f"/kd {req.card.strip()}"
-        else:
-            raise HTTPException(status_code=400, detail="Invalid category for Checker 1")
-    
-    elif checker == "checker2":
-        bot_username = JACK_CHECKER_BOT
-        if category == "auth":
-            if provider == "braintree":
-                command = f"/br {req.card.strip()}"
-            elif provider == "stripe":
-                command = f"/chk {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Auth")
-        elif category == "charge":
-            if provider == "braintree":
-                command = f"/ch {req.card.strip()}"
-            elif provider == "stripe":
-                command = f"/sk {req.card.strip()}"
-            else:
-                raise HTTPException(status_code=400, detail="Invalid provider for Checker 2 Charge")
-        else:
-            raise HTTPException(status_code=400, detail="Checker 2 does not support Killer gate")
-    else:
-        raise HTTPException(status_code=400, detail="Invalid checker. Use checker1 or checker2")
-
-    try:
-        await ensure_client_started()
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
-
-    try:
-        bot = await client.get_entity(bot_username)
-        
-        all_messages = []
-        final_text = ""
-        
-        # Use conversation with proper exception handling
-        try:
-            async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20, exclusive=False) as conv:
-                await conv.send_message(command)
-                
-                # Phase 1: Wait for messages with timeout
-                phase1_deadline = asyncio.get_event_loop().time() + 15
-                while asyncio.get_event_loop().time() < phase1_deadline:
-                    try:
-                        msg = await asyncio.wait_for(conv.get_response(), timeout=3)
-                        text = extract_message_text(getattr(msg, 'message', msg))
-                        if text:
-                            all_messages.append(text)
-                            if is_final_cc_result(text):
-                                final_text = text
-                                break
-                    except asyncio.TimeoutError:
-                        continue
-                    except Exception as e:
-                        # Ignore InvalidStateError and similar
-                        if "invalid state" not in str(e).lower():
-                            break
-                        continue
-        except Exception as conv_error:
-            # If conversation fails, continue to polling
-            pass
-
-        # Phase 2: Poll recent messages if needed
-        if not final_text:
-            poll_deadline = asyncio.get_event_loop().time() + 20
-            while asyncio.get_event_loop().time() < poll_deadline:
-                try:
-                    async for m in client.iter_messages(bot, limit=5):
-                        t = extract_message_text(m)
-                        if t and t not in all_messages:
-                            all_messages.append(t)
-                        if is_final_cc_result(t):
-                            final_text = t
-                            break
-                    if final_text:
-                        break
-                    await asyncio.sleep(2)
-                except Exception:
-                    await asyncio.sleep(2)
-
-        if not all_messages:
-            raise HTTPException(status_code=502, detail="No reply text received from bot.")
-
-        if not final_text:
-            for msg in reversed(all_messages):
-                if not is_processing_message(msg):
-                    final_text = msg
-                    break
-            if not final_text:
-                final_text = all_messages[-1]
-        
-        cleaned_text = clean_cc_response(final_text)
-        
-        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
-
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
-    except errors.FloodWaitError as e:
-        raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
-
-# ----------------------------
-# Health
-# ----------------------------
-@app.get("/health")
-async def health():
-    return {"ok": True}
-
-# ----------------------------
-# Static frontend (mount LAST so /lookup isn't shadowed)
-# ----------------------------
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
