@@ -45,7 +45,7 @@ class CCCheckRequest(BaseModel):
 class AdvancedCCRequest(BaseModel):
     card: str
     checker: str  # 'first' or 'second'
-    gate_category: str  # 'auth' | 'charge' | 'killer'
+    gate_category: str  # 'auth' | 'charge'
     gate_provider: str  # provider code per checker/category
 
 async def ensure_client_started():
@@ -212,7 +212,7 @@ async def perform_cc_check(bot_username: str, command: str):
             poll_deadline = loop.time() + 22
             while loop.time() < poll_deadline:
                 try:
-                    async for m in client.iter_messages(bot, limit=8):
+                    async for m in client.iter_messages(bot, limit=10):
                         t = extract_message_text(m)
                         if t:
                             push(t)
@@ -221,9 +221,9 @@ async def perform_cc_check(bot_username: str, command: str):
                                 break
                     if final_text:
                         break
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
                 except Exception:
-                    await asyncio.sleep(2)
+                    await asyncio.sleep(1)
 
     if not collected:
         raise HTTPException(status_code=502, detail="No reply text received from bot.")
@@ -431,9 +431,6 @@ async def cc_check_advanced(req: AdvancedCCRequest):
             "paypal": "/pp",
             "shopify": "/sp",
         },
-        "killer": {
-            # If any killer gates exist in first checker later
-        },
     }
 
     # Checker 2 (second): Jackthe_ripper_bot
@@ -448,32 +445,22 @@ async def cc_check_advanced(req: AdvancedCCRequest):
             "braintree": "/ch",
             "stripe": "/sk",
         },
-        "killer": {
-            # user-specified: cc killer => /kd
-            "killer": "/kd",
-        },
     }
 
     if checker not in ("first", "second"):
         raise HTTPException(status_code=400, detail="checker must be 'first' or 'second'")
-    if category not in ("auth", "charge", "killer"):
-        raise HTTPException(status_code=400, detail="gate_category must be 'auth', 'charge' or 'killer'")
+    if category not in ("auth", "charge"):
+        raise HTTPException(status_code=400, detail="gate_category must be 'auth' or 'charge'")
 
     maps = checker1_maps if checker == "first" else checker2_maps
     bot_username = CC_CHECKER_BOT if checker == "first" else SECOND_CC_BOT
 
     # Provider mapping rules
     category_map = maps.get(category, {})
-    if category == "killer":
-        # second checker expects provider 'killer' only for /kd
-        cmd = category_map.get(provider)
-        if not cmd:
-            raise HTTPException(status_code=400, detail="Invalid killer provider for selected checker")
-    else:
-        cmd = category_map.get(provider)
-        if not cmd:
-            valid = ", ".join(category_map.keys()) or "none"
-            raise HTTPException(status_code=400, detail=f"Invalid provider for {category}. Valid: {valid}")
+    cmd = category_map.get(provider)
+    if not cmd:
+        valid = ", ".join(category_map.keys()) or "none"
+        raise HTTPException(status_code=400, detail=f"Invalid provider for {category}. Valid: {valid}")
 
     command = f"{cmd} {req.card.strip()}"
 
