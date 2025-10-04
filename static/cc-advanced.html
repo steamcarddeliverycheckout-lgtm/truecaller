@@ -550,23 +550,37 @@
     let es1 = null;
     let es2 = null;
 
-    // Initialize provider options for checker 2
-    function updateProviders() {
-      const category = document.getElementById('c2_category').value;
-      const select = document.getElementById('c2_provider');
-      select.innerHTML = '';
-
-      if (category === 'auth') {
-        select.add(new Option('Braintree', 'braintree'));
-        select.add(new Option('Stripe', 'stripe'));
-      } else if (category === 'charge') {
-        select.add(new Option('Braintree', 'braintree'));
-        select.add(new Option('Stripe', 'stripe'));
+    // Allowed provider combinations per checker/category
+    const MAPS = {
+      first: {
+        auth: ['stripe', 'braintree'],
+        charge: ['paypal', 'shopify']
+      },
+      second: {
+        auth: ['braintree', 'stripe'],
+        charge: ['braintree', 'stripe']
       }
+    };
+
+    // Initialize provider options for both checkers
+    function updateProvidersFor(prefix, checker) {
+      const cat = document.getElementById(prefix + '_category').value;
+      const select = document.getElementById(prefix + '_provider');
+      if (!select) return;
+      const allowed = (MAPS[checker] && MAPS[checker][cat]) || [];
+      const label = (v) => v.charAt(0).toUpperCase() + v.slice(1);
+      select.innerHTML = '';
+      allowed.forEach(v => select.add(new Option(label(v), v)));
+      // Keep summary aligned after change
+      updateSummary(prefix);
     }
 
+    // Backward-compat wrapper for c2 existing listener
+    function updateProviders() { updateProvidersFor('c2', 'second'); }
+
     // Initialize on load
-    updateProviders();
+    updateProvidersFor('c1', 'first');
+    updateProvidersFor('c2', 'second');
 
     // Switch logic (show only one checker at a time)
     const switchButtons = document.querySelectorAll('.switch-btn');
@@ -606,9 +620,9 @@
       const provLabel = prov.charAt(0).toUpperCase() + prov.slice(1);
       sum.innerHTML = `<span class="tag cat">${catLabel}</span><span class="tag prov">${provLabel}</span>`;
     }
-    document.getElementById('c1_category').addEventListener('change', () => updateSummary('c1'));
+    document.getElementById('c1_category').addEventListener('change', () => { updateProvidersFor('c1', 'first'); });
     document.getElementById('c1_provider').addEventListener('change', () => updateSummary('c1'));
-    document.getElementById('c2_category').addEventListener('change', () => updateSummary('c2'));
+    document.getElementById('c2_category').addEventListener('change', () => { updateProvidersFor('c2', 'second'); });
     document.getElementById('c2_provider').addEventListener('change', () => updateSummary('c2'));
     updateSummary('c1');
     updateSummary('c2');
@@ -624,6 +638,18 @@
       const card = cardInput.value.trim();
       const category = categorySelect.value;
       const provider = providerSelect.value;
+      // Validate provider/category combo locally to avoid SSE 400 stream errors
+      const allowedProviders = (MAPS[checker] && MAPS[checker][category]) || [];
+      if (!allowedProviders.includes(provider)) {
+        showResult(
+          resultId,
+          'error',
+          '❌ Error',
+          `Invalid provider for selected gate. Allowed: ${allowedProviders.join(', ')}`
+        );
+        button.disabled = false;
+        return;
+      }
 
       // Validate input
       if (!card) {
