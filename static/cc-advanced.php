@@ -1,3 +1,8 @@
+<?php
+session_start();
+include_once 'app-auth.php';
+
+?>
 <!DOCTYPE html>
 <html>
 <head>
