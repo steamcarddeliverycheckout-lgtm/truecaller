@@ -1,7 +1,10 @@
 import os
 import re
+import json
 import asyncio
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import StreamingResponse
+from typing import AsyncGenerator, List
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient, errors, events
@@ -172,92 +175,48 @@ def is_final_cc_result(text: str) -> bool:
     ]
     return any(k in text for k in indicators_any)
 
-async def perform_cc_check_realtime(bot_username: str, command: str, card_number: str):
-    """
-    Send a command to the bot and monitor messages in REAL-TIME using event handlers.
-    Captures responses immediately as they appear, monitoring for card details.
-    """
-    await ensure_client_started()
-    bot = await client.get_entity(bot_username)
-    bot_id = bot.id
-
-    # Extract just the card number (first part before |)
-    card_prefix = card_number.split('|')[0] if '|' in card_number else card_number
-    
-    # Storage for captured messages
-    collected_messages = []
-    final_result = asyncio.Event()
-    final_text = None
-    
-    async def message_handler(event):
-        """Real-time message handler - captures messages as they arrive"""
-        nonlocal final_text
-        
-        # Only process messages from our target bot
-        if event.sender_id != bot_id:
-            return
-            
-        text = extract_message_text(event.message)
-        if not text:
-            return
-        
-        # Check if message contains our card details
-        if card_prefix in text or card_number in text:
-            collected_messages.append(text)
-            
-            # If it's a final result, capture it and signal completion
-            if is_final_cc_result(text):
-                final_text = text
-                final_result.set()
-    
-    # Register the event handler for new messages
-    handler = client.add_event_handler(
-        message_handler,
-        events.NewMessage(chats=bot_id)
-    )
-    
+def parse_card_parts(card: str):
     try:
-        # Send the command
-        await client.send_message(bot, command)
-        
-        # Wait for final result with timeout
-        try:
-            await asyncio.wait_for(final_result.wait(), timeout=TIMEOUT_SECONDS)
-        except asyncio.TimeoutError:
-            # If timeout, try to get the latest collected message
-            if collected_messages:
-                # Use the last non-processing message if available
-                for text in reversed(collected_messages):
-                    if not is_processing_message(text):
-                        final_text = text
-                        break
-                if not final_text:
-                    final_text = collected_messages[-1]
-            else:
-                # Fallback: try to get latest messages from chat
-                async for m in client.iter_messages(bot, limit=5):
-                    t = extract_message_text(m)
-                    if t and (card_prefix in t or card_number in t):
-                        collected_messages.append(t)
-                        if is_final_cc_result(t):
-                            final_text = t
-                            break
-                
-                if not final_text and collected_messages:
-                    final_text = collected_messages[-1]
-    
-    finally:
-        # Always remove the event handler
-        client.remove_event_handler(handler)
-    
-    if not final_text and not collected_messages:
-        raise HTTPException(status_code=502, detail="No reply received from bot.")
-    
-    if not final_text:
-        final_text = collected_messages[-1] if collected_messages else ""
-    
-    cleaned_text = clean_cc_response(final_text)
-    return cleaned_text, final_text, len(collected_messages)
+        number, mm, yy_or_yyyy, cvv = [p.strip() for p in card.split("|")]
+    except Exception:
+        return None, None, None, None
+    return number, mm, yy_or_yyyy, cvv
+
+def year_variants(year: str) -> List[str]:
+    y = year.strip()
+    if len(y) == 4 and y.isdigit():
+        return [y, y[-2:]]
+    if len(y) == 2 and y.isdigit():
+        return [y, f"20{y}"]
+    return [y]
+
+def month_variants(mm: str) -> List[str]:
+    m = mm.strip()
+    if not m.isdigit():
+        return [m]
+    m_int = str(int(m))  # strip leading zero
+    m_pad = m_int.zfill(2)
+    return [m_pad, m_int]
+
+def message_matches_card(text: str, card: str) -> bool:
+    """Heuristic: check if a reply text likely refers to the same card.
+    Tries exact pipe format variations and also falls back to number presence.
+    """
+    if not text or not card:
+        return False
+    number, mm, yy_or_yyyy, cvv = parse_card_parts(card)
+    if not number:
+        return False
+    candidates = set()
+    year_opts = year_variants(yy_or_yyyy or "")
+    month_opts = month_variants(mm or "")
+    for m in month_opts:
+        for y in year_opts:
+            candidates.add(f"{number}|{m}|{y}|{cvv}")
+    # Also consider number alone as a weak signal
+    candidates.add(number)
+    s = text
+    return any(c and c in s for c in candidates)
 
 async def perform_cc_check(bot_username: str, command: str):
     """Send a command to the given bot and wait for a final response using robust strategy."""
@@ -326,6 +285,160 @@ async def perform_cc_check(bot_username: str, command: str):
 
     cleaned_text = clean_cc_response(final_text)
     return cleaned_text, final_text, len(collected)
+
+# ----------------------------
+# SSE: /cc-check-advanced/stream
+# ----------------------------
+@app.get("/cc-check-advanced/stream")
+async def cc_check_advanced_stream(card: str, checker: str, gate_category: str, gate_provider: str):
+    if not TELEGRAM_READY:
+        raise HTTPException(status_code=500, detail="Telegram not configured.")
+
+    # Validate card format (number|month|year|cvv)
+    card_pattern = r"^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$"
+    if not re.match(card_pattern, card.strip()):
+        raise HTTPException(status_code=400, detail="Invalid card format. Use: number|month|year|cvv")
+
+    checker = checker.strip().lower()
+    category = gate_category.strip().lower()
+    provider = gate_provider.strip().lower()
+
+    checker1_maps = {
+        "auth": {
+            "stripe": "/st",
+            "braintree": "/ba",
+        },
+        "charge": {
+            "paypal": "/pp",
+            "shopify": "/sp",
+        },
+    }
+
+    checker2_maps = {
+        "auth": {
+            "braintree": "/br",
+            "stripe": "/chk",
+        },
+        "charge": {
+            "braintree": "/ch",
+            "stripe": "/sk",
+        },
+    }
+
+    if checker not in ("first", "second"):
+        raise HTTPException(status_code=400, detail="checker must be 'first' or 'second'")
+    if category not in ("auth", "charge"):
+        raise HTTPException(status_code=400, detail="gate_category must be 'auth' or 'charge'")
+
+    maps = checker1_maps if checker == "first" else checker2_maps
+    bot_username = CC_CHECKER_BOT if checker == "first" else SECOND_CC_BOT
+
+    category_map = maps.get(category, {})
+    cmd = category_map.get(provider)
+    if not cmd:
+        valid = ", ".join(category_map.keys()) or "none"
+        raise HTTPException(status_code=400, detail=f"Invalid provider for {category}. Valid: {valid}")
+
+    command = f"{cmd} {card.strip()}"
+
+    async def event_gen() -> AsyncGenerator[str, None]:
+        try:
+            await ensure_client_started()
+            bot = await client.get_entity(bot_username)
+
+            seen_texts: set[str] = set()
+            final_sent = False
+
+            # Initial notify
+            init_payload = {"type": "status", "status": "sent", "command": command}
+            yield f"event: update\n" + f"data: {json.dumps(init_payload)}\n\n"
+
+            loop = asyncio.get_running_loop()
+            async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 30) as conv:
+                await conv.send_message(command)
+
+                # Phase 1: consume conversation queue quickly
+                phase1_deadline = loop.time() + 18
+                while loop.time() < phase1_deadline:
+                    try:
+                        msg = await asyncio.wait_for(conv.get_response(), timeout=4)
+                        text = extract_message_text(msg)
+                        if not text or text in seen_texts:
+                            continue
+                        seen_texts.add(text)
+
+                        payload = {
+                            "type": "update",
+                            "raw": text,
+                            "rawClean": clean_cc_response(text),
+                        }
+                        yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                        if is_final_cc_result(text) or message_matches_card(text, card):
+                            final_payload = {
+                                "type": "final",
+                                "raw": text,
+                                "rawClean": clean_cc_response(text),
+                            }
+                            yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
+                            final_sent = True
+                            return
+                    except asyncio.TimeoutError:
+                        continue
+                    except Exception:
+                        break
+
+                # Phase 2: poll for edits/new messages in chat
+                poll_deadline = loop.time() + 22
+                while not final_sent and loop.time() < poll_deadline:
+                    try:
+                        async for m in client.iter_messages(bot, limit=10):
+                            t = extract_message_text(m)
+                            if not t or t in seen_texts:
+                                continue
+                            seen_texts.add(t)
+
+                            payload = {
+                                "type": "update",
+                                "raw": t,
+                                "rawClean": clean_cc_response(t),
+                            }
+                            yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+                            if is_final_cc_result(t) or message_matches_card(t, card):
+                                final_payload = {
+                                    "type": "final",
+                                    "raw": t,
+                                    "rawClean": clean_cc_response(t),
+                                }
+                                yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
+                                final_sent = True
+                                return
+                        await asyncio.sleep(1)
+                    except Exception:
+                        await asyncio.sleep(1)
+
+            # If we got here without final, emit best-effort last
+            if not final_sent and seen_texts:
+                last_text = next(reversed(list(seen_texts)))
+                final_payload = {
+                    "type": "final",
+                    "raw": last_text,
+                    "rawClean": clean_cc_response(last_text),
+                }
+                yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            err_payload = {"type": "error", "detail": str(e)}
+            yield f"event: error\n" + f"data: {json.dumps(err_payload)}\n\n"
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 # ----------------------------
 # /lookup endpoint
@@ -418,14 +531,71 @@ async def cc_check(req: CCCheckRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
     try:
-        # Use REAL-TIME monitoring to capture responses immediately
-        cleaned_text, full_response, total_messages = await perform_cc_check_realtime(
-            bot_username=CC_CHECKER_BOT,
-            command=command,
-            card_number=req.card.strip()
-        )
+        # Resolve bot entity
+        bot = await client.get_entity(CC_CHECKER_BOT)
+
+        # Use conversation to wait for bot replies
+        # Some bots edit their messages in-place, so we will poll the latest
+        # messages from the bot dialog if needed to detect a final result.
+        async with client.conversation(bot, timeout=TIMEOUT_SECONDS + 20) as conv:
+            # Send the command to the bot
+            await conv.send_message(command)
+            
+            all_messages = []
+            final_text = ""
+            
+            # Phase 1: Wait up to 15s for a non-processing message via conversation queue
+            phase1_deadline = asyncio.get_event_loop().time() + 15
+            while asyncio.get_event_loop().time() < phase1_deadline:
+                try:
+                    msg = await asyncio.wait_for(conv.get_response(), timeout=3)
+                    text = extract_message_text(getattr(msg, 'message', msg))
+                    if text:
+                        all_messages.append(text)
+                        if is_final_cc_result(text):
+                            final_text = text
+                            break
+                except asyncio.TimeoutError:
+                    # keep trying in loop until deadline
+                    continue
+                except Exception:
+                    break
+
+            # Phase 2: If still not final, poll recent messages from the bot chat
+            # Some bots edit messages or send outside the conversation queue
+            if not final_text:
+                poll_deadline = asyncio.get_event_loop().time() + 20
+                while asyncio.get_event_loop().time() < poll_deadline:
+                    try:
+                        async for m in client.iter_messages(bot, limit=5):
+                            t = extract_message_text(m)
+                            if t and t not in all_messages:
+                                all_messages.append(t)
+                            if is_final_cc_result(t):
+                                final_text = t
+                                break
+                        if final_text:
+                            break
+                        await asyncio.sleep(2)
+                    except Exception:
+                        await asyncio.sleep(2)
+
+        if not all_messages:
+            raise HTTPException(status_code=502, detail="No reply text received from bot.")
+
+        if not final_text:
+            # As a fallback, pick the last non-processing message if any
+            for msg in reversed(all_messages):
+                if not is_processing_message(msg):
+                    final_text = msg
+                    break
+            if not final_text:
+                final_text = all_messages[-1]
         
-        return {"ok": True, "raw": cleaned_text, "full_response": full_response, "all_messages": total_messages}
+        # Clean the response - remove unwanted parts
+        cleaned_text = clean_cc_response(final_text)
+        
+        return {"ok": True, "raw": cleaned_text, "full_response": final_text, "all_messages": len(all_messages)}
 
     except asyncio.TimeoutError:
         raise HTTPException(status_code=504, detail="Timeout waiting for bot reply.")
@@ -495,12 +665,7 @@ async def cc_check_advanced(req: AdvancedCCRequest):
     command = f"{cmd} {req.card.strip()}"
 
     try:
-        # Use REAL-TIME monitoring to capture responses immediately
-        cleaned, full, total = await perform_cc_check_realtime(
-            bot_username=bot_username,
-            command=command,
-            card_number=req.card.strip()
-        )
+        cleaned, full, total = await perform_cc_check(bot_username=bot_username, command=command)
         return {"ok": True, "raw": cleaned, "full_response": full, "messages": total}
     except HTTPException:
         raise
