@@ -655,11 +655,15 @@
         // connection opened
       });
 
+      const dedupeSet = new Set();
+
       es.addEventListener('update', (ev) => {
         try {
           const data = JSON.parse(ev.data);
           const txt = (data.rawClean || data.raw || '').trim();
           if (!txt) return;
+          if (dedupeSet.has(txt)) return;
+          dedupeSet.add(txt);
           contentDiv.textContent += (contentDiv.textContent ? '\n\n' : '') + txt;
         } catch (_) {}
       });
@@ -668,7 +672,8 @@
         try {
           const data = JSON.parse(ev.data);
           const txt = (data.rawClean || data.raw || '').trim();
-          if (txt) {
+          if (txt && !dedupeSet.has(txt)) {
+            dedupeSet.add(txt);
             // ensure final shown at bottom
             contentDiv.textContent += (contentDiv.textContent ? '\n\n' : '') + txt;
           }
