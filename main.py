@@ -21,7 +21,7 @@ STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
 TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
 SECOND_CC_BOT = "Jackthe_ripper_bot"
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
+TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "14"))
 
 # ----------------------------
 # Telegram Client
