@@ -347,6 +347,7 @@ async def cc_check_advanced_stream(card: str, checker: str, gate_category: str, 
             bot = await client.get_entity(bot_username)
 
             seen_texts: set[str] = set()
+            ordered_texts: list[str] = []
             final_sent = False
 
             # Initial notify
@@ -366,19 +367,22 @@ async def cc_check_advanced_stream(card: str, checker: str, gate_category: str, 
                         if not text or text in seen_texts:
                             continue
                         seen_texts.add(text)
+                        ordered_texts.append(text)
 
-                        payload = {
-                            "type": "update",
-                            "raw": text,
-                            "rawClean": clean_cc_response(text),
-                        }
-                        yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                        cleaned = clean_cc_response(text)
+                        if cleaned.strip():
+                            payload = {
+                                "type": "update",
+                                "raw": text,
+                                "rawClean": cleaned,
+                            }
+                            yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-                        if is_final_cc_result(text) or message_matches_card(text, card):
+                        if is_final_cc_result(text):
                             final_payload = {
                                 "type": "final",
                                 "raw": text,
-                                "rawClean": clean_cc_response(text),
+                                "rawClean": cleaned if cleaned.strip() else text,
                             }
                             yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
                             final_sent = True
@@ -397,19 +401,22 @@ async def cc_check_advanced_stream(card: str, checker: str, gate_category: str, 
                             if not t or t in seen_texts:
                                 continue
                             seen_texts.add(t)
+                            ordered_texts.append(t)
 
-                            payload = {
-                                "type": "update",
-                                "raw": t,
-                                "rawClean": clean_cc_response(t),
-                            }
-                            yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+                            cleaned2 = clean_cc_response(t)
+                            if cleaned2.strip():
+                                payload = {
+                                    "type": "update",
+                                    "raw": t,
+                                    "rawClean": cleaned2,
+                                }
+                                yield f"event: update\n" + f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
-                            if is_final_cc_result(t) or message_matches_card(t, card):
+                            if is_final_cc_result(t):
                                 final_payload = {
                                     "type": "final",
                                     "raw": t,
-                                    "rawClean": clean_cc_response(t),
+                                    "rawClean": cleaned2 if cleaned2.strip() else t,
                                 }
                                 yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
                                 final_sent = True
@@ -419,12 +426,21 @@ async def cc_check_advanced_stream(card: str, checker: str, gate_category: str, 
                         await asyncio.sleep(1)
 
             # If we got here without final, emit best-effort last
-            if not final_sent and seen_texts:
-                last_text = next(reversed(list(seen_texts)))
+            if not final_sent and ordered_texts:
+                chosen = None
+                for it in reversed(ordered_texts):
+                    if not is_processing_message(it):
+                        cleaned_final = clean_cc_response(it)
+                        if cleaned_final.strip():
+                            chosen = (it, cleaned_final)
+                            break
+                if not chosen:
+                    it = ordered_texts[-1]
+                    chosen = (it, clean_cc_response(it))
                 final_payload = {
                     "type": "final",
-                    "raw": last_text,
-                    "rawClean": clean_cc_response(last_text),
+                    "raw": chosen[0],
+                    "rawClean": chosen[1] if chosen[1].strip() else chosen[0],
                 }
                 yield f"event: final\n" + f"data: {json.dumps(final_payload, ensure_ascii=False)}\n\n"
         except Exception as e:
