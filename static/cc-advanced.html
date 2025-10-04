@@ -522,6 +522,8 @@
 
   <script>
     const CARD_REGEX = /^\d{13,19}\|\d{2}\|\d{2,4}\|\d{3,4}$/;
+    let es1 = null;
+    let es2 = null;
 
     // Initialize provider options for checker 2
     function updateProviders() {
@@ -632,45 +634,59 @@
       tick();
       let timer = setInterval(tick, 500);
 
-      try {
-        const response = await fetch('/cc-check-advanced', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            card: card,
-            checker: checker,
-            gate_category: category,
-            gate_provider: provider
-          })
-        });
+      // Close any previous streams for this checker
+      if (isFirst && es1) { try { es1.close(); } catch (_) {} }
+      if (!isFirst && es2) { try { es2.close(); } catch (_) {} }
 
-        const data = await response.json();
+      const contentDiv = document.getElementById(resultId + '_content');
+      contentDiv.textContent = '';
 
-        if (data.ok && data.raw) {
-          clearInterval(timer);
-          showResult(
-            resultId,
-            'success',
-            '✅ Response Received',
-            data.raw,
-            `Processed successfully | Messages: ${data.messages || 1}`
-          );
-        } else {
-          clearInterval(timer);
-          const errorMsg = data.detail || JSON.stringify(data);
-          showResult(resultId, 'error', '❌ Error', errorMsg);
-        }
-      } catch (error) {
+      const params = new URLSearchParams({
+        card: card,
+        checker: checker,
+        gate_category: category,
+        gate_provider: provider
+      });
+
+      const es = new EventSource('/cc-check-advanced/stream?' + params.toString());
+      if (isFirst) es1 = es; else es2 = es;
+
+      es.addEventListener('open', () => {
+        // connection opened
+      });
+
+      es.addEventListener('update', (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const txt = (data.rawClean || data.raw || '').trim();
+          if (!txt) return;
+          contentDiv.textContent += (contentDiv.textContent ? '\n\n' : '') + txt;
+        } catch (_) {}
+      });
+
+      es.addEventListener('final', (ev) => {
+        try {
+          const data = JSON.parse(ev.data);
+          const txt = (data.rawClean || data.raw || '').trim();
+          if (txt) {
+            // ensure final shown at bottom
+            contentDiv.textContent += (contentDiv.textContent ? '\n\n' : '') + txt;
+          }
+        } catch (_) {}
         clearInterval(timer);
-        showResult(
-          resultId, 
-          'error', 
-          '❌ Network Error', 
-          'Failed to connect to the server.\n' + error.message
-        );
-      } finally {
+        showResult(resultId, 'success', '✅ Response Received', contentDiv.textContent, 'Completed');
+        try { es.close(); } catch (_) {}
         button.disabled = false;
-      }
+      });
+
+      es.addEventListener('error', (ev) => {
+        clearInterval(timer);
+        let msg = 'Stream error';
+        try { msg = JSON.parse(ev.data).detail || msg; } catch (_) {}
+        showResult(resultId, 'error', '❌ Error', msg);
+        try { es.close(); } catch (_) {}
+        button.disabled = false;
+      });
     }
 
     // Allow Enter key to submit
