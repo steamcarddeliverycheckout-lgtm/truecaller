@@ -114,7 +114,13 @@ def clean_cc_response(text: str):
     important_lines = []
     
     # Skip lines to exclude
-    skip_keywords = ['🔄', 'Processing', '⚡', '𝗧𝗶𝗺𝗲:', '𝗟𝗶𝗺𝗶𝘁:', '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot']
+    skip_keywords = [
+        '🔄', 'Processing', '⚡',
+        '𝗧𝗶𝗺𝗲:', 'Time:', 'Elapsed:',
+        '𝗟𝗶𝗺𝗶𝘁:', 'Limit:',
+        '𝗖𝗵𝗲𝗰𝗸𝗲𝗱 𝗯𝘆', 'Checked by', '@niggacheck_bot',
+        'Gate:', 'User:'
+    ]
     
     # Lines to keep
     keep_keywords = ['𝗖𝗮𝗿𝗱:', '𝐆𝐚𝐭𝐞𝐰𝐚𝐲:', '𝐑𝐞𝐬𝐩𝐨𝐧𝐬𝐞:', '𝗜𝗻𝗳𝗼:', '𝐈𝐬𝐬𝐮𝐞𝐫:', '𝐂𝐨𝐮𝐧𝐭𝐫𝐲:', 
