@@ -312,6 +312,31 @@
       border-left-color: #ef4444;
     }
 
+    /* Pretty status badges */
+    .pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-weight: 800;
+      letter-spacing: 0.2px;
+      font-size: 0.85em;
+    }
+    .pill.approved { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+    .pill.declined { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    .pill.processing { background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; }
+
+    /* Animated typing dots for processing */
+    .dots { display: inline-block; }
+    .dots::after { content: ''; display: inline-block; width: 1.5em; text-align: left; }
+    @keyframes dots {
+      0% { content: '.'; }
+      33% { content: '..'; }
+      66% { content: '...'; }
+    }
+    .typing::after { animation: dots 1.2s steps(3, end) infinite; content: '.'; }
+
     .result-header {
       font-weight: 700;
       margin-bottom: 10px;
@@ -614,10 +639,10 @@
       // Show loading state
       button.disabled = true;
       showResult(
-        resultId, 
-        'loading', 
-        '<span class="loading-spinner"></span> Processing...', 
-        'Sending card to validator...\nWaiting for response...\nThis may take a few seconds.',
+        resultId,
+        'loading',
+        '<span class="pill processing"><span class="loading-spinner"></span> Processing<span class="dots typing"></span></span>',
+        'Sending card to validator...\nWaiting for response...',
         `Checker: ${isFirst ? 'H4K3R Checker' : 'H4K3R CHECKER PRO'} | Gate: ${category} - ${provider}`
       );
 
@@ -664,6 +689,17 @@
           if (!txt) return;
           if (dedupeSet.has(txt)) return;
           dedupeSet.add(txt);
+          // Highlight lines containing APPROVED/DECLINED
+          const lower = txt.toLowerCase();
+          let headerBadge = '';
+          if (lower.includes('approved') || txt.includes('✅')) {
+            headerBadge = '<span class="pill approved">Approved ✅</span>';
+          } else if (lower.includes('declined') || txt.includes('❌')) {
+            headerBadge = '<span class="pill declined">Declined ❌</span>';
+          }
+          if (headerBadge) {
+            document.getElementById(resultId + '_header').innerHTML = headerBadge;
+          }
           contentDiv.textContent += (contentDiv.textContent ? '\n\n' : '') + txt;
         } catch (_) {}
       });
@@ -679,7 +715,19 @@
           }
         } catch (_) {}
         clearInterval(timer);
-        showResult(resultId, 'success', '✅ Response Received', contentDiv.textContent, 'Completed');
+        // If no badge yet, infer from final text
+        const headerEl = document.getElementById(resultId + '_header');
+        if (!headerEl.innerHTML.trim()) {
+          const t = contentDiv.textContent.toLowerCase();
+          if (t.includes('approved') || t.includes('✅')) {
+            headerEl.innerHTML = '<span class="pill approved">Approved ✅</span>';
+          } else if (t.includes('declined') || t.includes('❌')) {
+            headerEl.innerHTML = '<span class="pill declined">Declined ❌</span>';
+          } else {
+            headerEl.innerHTML = '✅ Response Received';
+          }
+        }
+        showResult(resultId, 'success', document.getElementById(resultId + '_header').innerHTML, contentDiv.textContent, 'Completed');
         try { es.close(); } catch (_) {}
         button.disabled = false;
       });
