@@ -2,8 +2,9 @@ import os
 import re
 import json
 import asyncio
+import aiohttp
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from typing import AsyncGenerator, List
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
@@ -21,7 +22,7 @@ STRING_SESSION = os.environ.get("TELEGRAM_SESSION")
 TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
 SECOND_CC_BOT = "Jackthe_ripper_bot"
-TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "14"))
+TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
 
 # ----------------------------
 # Telegram Client
@@ -51,6 +52,9 @@ class AdvancedCCRequest(BaseModel):
     gate_category: str  # 'auth' | 'charge'
     gate_provider: str  # provider code per checker/category
 
+class TeraboxRequest(BaseModel):
+    url: str
+
 async def ensure_client_started():
     if not TELEGRAM_READY:
         raise RuntimeError("Telegram credentials/session missing.")
@@ -63,14 +67,14 @@ async def ensure_client_started():
 # Parser for @Truecaller_sbot
 # Example:
 # ✅ Truecaller Details Revealed.!!
-# ━━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━
 # 📱  Carrier: Not Found
 # 🌍 Country: Not Found
-# 🌐 International Format: Not Found
+# 🌍 International Format: Not Found
 # 📞 Local Format: Not Found
 # 📍 Location: Not Found
-# 🕒 Timezones: Not Found
-# 🔍 Truecaller Name: usman pasha
+# 🕑 Timezones: Not Found
+# 📍 Truecaller Name: usman pasha
 # 👤 Username: No name found
 # 🔎 Number search: 3
 # ----------------------------
@@ -92,11 +96,11 @@ def parse_sbot_reply(text: str):
 
     out["carrier"] = pick(r"📱\s*Carrier:\s*(.+)")
     out["country"] = pick(r"🌍\s*Country:\s*(.+)")
-    out["international_format"] = pick(r"🌐\s*International\s*Format:\s*(.+)")
+    out["international_format"] = pick(r"🌍\s*International\s*Format:\s*(.+)")
     out["local_format"] = pick(r"📞\s*Local\s*Format:\s*(.+)")
     out["location"] = pick(r"📍\s*Location:\s*(.+)")
-    out["timezones"] = pick(r"🕒\s*Timezones?:\s*(.+)")
-    out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
+    out["timezones"] = pick(r"🕑\s*Timezones?:\s*(.+)")
+    out["truecaller_name"] = pick(r"📍\s*Truecaller\s*Name:\s*(.+)")
     out["username"] = pick(r"👤\s*Username:\s*(.+)")
     out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
     out["raw"] = text
@@ -697,6 +701,56 @@ async def cc_check_advanced(req: AdvancedCCRequest):
         raise HTTPException(status_code=429, detail=f"Telegram rate limit, wait {e.seconds}s")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
+
+# ----------------------------
+# Terabox Downloader API
+# ----------------------------
+@app.post("/terabox/download")
+async def terabox_download(req: TeraboxRequest):
+    """
+    Call the Terabox API to get download links for videos
+    """
+    if not req.url:
+        raise HTTPException(status_code=400, detail="Please provide a Terabox URL")
+    
+    # Call the external Terabox API
+    api_url = f"https://wdzone-terabox-api.vercel.app/api?url={req.url}"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=502, detail=f"Terabox API returned status {response.status}")
+                
+                data = await response.json()
+                
+                # Check if the API returned success
+                if "✅ Status" not in data or data["✅ Status"] != "Success":
+                    raise HTTPException(status_code=502, detail="Failed to extract video information")
+                
+                # Parse and format the response
+                videos = []
+                if "📜 Extracted Info" in data:
+                    for item in data["📜 Extracted Info"]:
+                        video_info = {
+                            "title": item.get("📂 Title", "Unknown"),
+                            "size": item.get("📏 Size", "Unknown"),
+                            "download_link": item.get("🔽 Direct Download Link", ""),
+                            "thumbnails": item.get("🖼️ Thumbnails", {})
+                        }
+                        videos.append(video_info)
+                
+                return {
+                    "ok": True,
+                    "videos": videos,
+                    "shortlink": data.get("🔗 ShortLink", ""),
+                    "raw_response": data
+                }
+                
+    except asyncio.TimeoutError:
+        raise HTTPException(status_code=504, detail="Timeout while fetching from Terabox API")
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error fetching from Terabox API: {str(e)}")
 
 # ----------------------------
 # Health
