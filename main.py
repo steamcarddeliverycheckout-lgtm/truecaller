@@ -706,22 +706,12 @@ async def cc_check_advanced(req: AdvancedCCRequest):
 async def health():
     return {"ok": True}
 
-# ----------------------------
-# Static frontend (mount LAST so /lookup isn't shadowed)
-# ----------------------------
-app.mount("/", StaticFiles(directory="static", html=True), name="static")
-
-# ----------------------------
-# Terabox minimal API: info + proxy stream
-# ----------------------------
-
 TERABOX_API = "https://wdzone-terabox-api.vercel.app/api"
 
 @app.get("/terabox/info")
 async def terabox_info(url: str):
     if not url:
         raise HTTPException(status_code=400, detail="Missing url")
-    # Call third-party API to get extracted info
     params = {"url": url}
     try:
         async with httpx.AsyncClient(timeout=20) as client_http:
@@ -740,16 +730,13 @@ async def terabox_stream(direct: str):
     if not direct:
         raise HTTPException(status_code=400, detail="Missing direct link")
 
-    # Stream bytes from the direct link to the client without storing
     async def byte_iter():
         try:
             async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client_http:
                 async with client_http.stream("GET", direct, headers={
-                    # Some CDNs require a user-agent
                     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
                 }) as resp:
-                    status = resp.status_code
-                    if status >= 400:
+                    if resp.status_code >= 400:
                         text = await resp.aread()
                         raise HTTPException(status_code=502, detail=f"Upstream error: {text[:200].decode(errors='ignore')}")
                     async for chunk in resp.aiter_bytes():
@@ -759,3 +746,8 @@ async def terabox_stream(direct: str):
             raise HTTPException(status_code=502, detail=f"HTTP error: {e}")
 
     return StreamingResponse(byte_iter(), media_type="video/mp4")
+
+# ----------------------------
+# Static frontend (mount LAST so /lookup isn't shadowed)
+# ----------------------------
+app.mount("/", StaticFiles(directory="static", html=True), name="static")
