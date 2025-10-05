@@ -3,8 +3,11 @@ import re
 import json
 import asyncio
 import aiohttp
+import aiofiles
+import uuid
+from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse
+from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
 from typing import AsyncGenerator, List
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
@@ -23,6 +26,10 @@ TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
 SECOND_CC_BOT = "Jackthe_ripper_bot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
+
+# Video storage
+VIDEOS_DIR = Path("downloaded_videos")
+VIDEOS_DIR.mkdir(exist_ok=True)
 
 # ----------------------------
 # Telegram Client
@@ -703,6 +710,61 @@ async def cc_check_advanced(req: AdvancedCCRequest):
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
 
 # ----------------------------
+# Video Download and Storage Functions
+# ----------------------------
+async def download_video_to_server(video_url: str, video_title: str) -> str:
+    """Download video from URL to server and return local file path"""
+    try:
+        # Generate unique filename
+        file_id = str(uuid.uuid4())
+        file_extension = ".mp4"  # Default extension
+        filename = f"{file_id}{file_extension}"
+        file_path = VIDEOS_DIR / filename
+        
+        # Download video
+        async with aiohttp.ClientSession() as session:
+            async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=300)) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=502, detail=f"Failed to download video: HTTP {response.status}")
+                
+                # Get file size for progress tracking
+                total_size = int(response.headers.get('content-length', 0))
+                
+                # Download and save file
+                async with aiofiles.open(file_path, 'wb') as f:
+                    downloaded = 0
+                    async for chunk in response.content.iter_chunked(8192):
+                        await f.write(chunk)
+                        downloaded += len(chunk)
+                        
+                        # Optional: Add progress logging here if needed
+                        if total_size > 0:
+                            progress = (downloaded / total_size) * 100
+                            # You can emit progress updates here if needed
+        
+        return str(file_path)
+        
+    except Exception as e:
+        # Clean up partial file if it exists
+        if file_path.exists():
+            file_path.unlink()
+        raise HTTPException(status_code=502, detail=f"Error downloading video: {str(e)}")
+
+def get_video_info(file_path: str) -> dict:
+    """Get video file information"""
+    path = Path(file_path)
+    if not path.exists():
+        return None
+    
+    stat = path.stat()
+    return {
+        "filename": path.name,
+        "size": stat.st_size,
+        "created": stat.st_ctime,
+        "path": str(path)
+    }
+
+# ----------------------------
 # Terabox Downloader API
 # ----------------------------
 @app.post("/terabox/download")
@@ -736,7 +798,9 @@ async def terabox_download(req: TeraboxRequest):
                             "title": item.get("📂 Title", "Unknown"),
                             "size": item.get("📏 Size", "Unknown"),
                             "download_link": item.get("🔽 Direct Download Link", ""),
-                            "thumbnails": item.get("🖼️ Thumbnails", {})
+                            "thumbnails": item.get("🖼️ Thumbnails", {}),
+                            "server_downloaded": False,
+                            "server_path": None
                         }
                         videos.append(video_info)
                 
@@ -751,6 +815,115 @@ async def terabox_download(req: TeraboxRequest):
         raise HTTPException(status_code=504, detail="Timeout while fetching from Terabox API")
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Error fetching from Terabox API: {str(e)}")
+
+# ----------------------------
+# Video Download to Server Endpoint
+# ----------------------------
+@app.post("/terabox/download-to-server")
+async def download_video_to_server_endpoint(req: TeraboxRequest):
+    """
+    Download a specific video from Terabox to the server
+    """
+    if not req.url:
+        raise HTTPException(status_code=400, detail="Please provide a Terabox URL")
+    
+    # First get video info from Terabox API
+    api_url = f"https://wdzone-terabox-api.vercel.app/api?url={req.url}"
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
+                if response.status != 200:
+                    raise HTTPException(status_code=502, detail=f"Terabox API returned status {response.status}")
+                
+                data = await response.json()
+                
+                if "✅ Status" not in data or data["✅ Status"] != "Success":
+                    raise HTTPException(status_code=502, detail="Failed to extract video information")
+                
+                # Get the first video's download link
+                if "📜 Extracted Info" not in data or not data["📜 Extracted Info"]:
+                    raise HTTPException(status_code=404, detail="No videos found")
+                
+                video_info = data["📜 Extracted Info"][0]
+                download_url = video_info.get("🔽 Direct Download Link", "")
+                video_title = video_info.get("📂 Title", "Unknown")
+                
+                if not download_url:
+                    raise HTTPException(status_code=404, detail="No download link available")
+                
+                # Download video to server
+                server_path = await download_video_to_server(download_url, video_title)
+                video_file_info = get_video_info(server_path)
+                
+                return {
+                    "ok": True,
+                    "message": "Video downloaded to server successfully",
+                    "video_info": {
+                        "title": video_title,
+                        "size": video_info.get("📏 Size", "Unknown"),
+                        "server_path": server_path,
+                        "file_info": video_file_info
+                    },
+                    "stream_url": f"/terabox/stream/{Path(server_path).name}"
+                }
+                
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Error downloading video: {str(e)}")
+
+# ----------------------------
+# Video Streaming Endpoint
+# ----------------------------
+@app.get("/terabox/stream/{filename}")
+async def stream_video(filename: str):
+    """
+    Stream a video file from the server
+    """
+    file_path = VIDEOS_DIR / filename
+    
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    # Return the video file for streaming
+    return FileResponse(
+        path=str(file_path),
+        media_type="video/mp4",
+        filename=filename,
+        headers={
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=3600"
+        }
+    )
+
+# ----------------------------
+# List Downloaded Videos
+# ----------------------------
+@app.get("/terabox/videos")
+async def list_downloaded_videos():
+    """
+    List all videos downloaded to the server
+    """
+    try:
+        videos = []
+        for file_path in VIDEOS_DIR.glob("*.mp4"):
+            file_info = get_video_info(str(file_path))
+            if file_info:
+                videos.append({
+                    "filename": file_info["filename"],
+                    "size": file_info["size"],
+                    "created": file_info["created"],
+                    "stream_url": f"/terabox/stream/{file_info['filename']}"
+                })
+        
+        return {
+            "ok": True,
+            "videos": videos,
+            "count": len(videos)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing videos: {str(e)}")
 
 # ----------------------------
 # Health
