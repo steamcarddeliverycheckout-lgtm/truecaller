@@ -2,13 +2,10 @@ import os
 import re
 import json
 import asyncio
-import aiohttp
-import aiofiles
-import uuid
-from pathlib import Path
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse, JSONResponse, FileResponse
+from fastapi.responses import StreamingResponse, Response
 from typing import AsyncGenerator, List
+import httpx
 from pydantic import BaseModel
 from fastapi.staticfiles import StaticFiles
 from telethon import TelegramClient, errors, events
@@ -26,10 +23,6 @@ TRUECALLER_BOT = "Truecaller_sbot"
 CC_CHECKER_BOT = "niggacheck_bot"
 SECOND_CC_BOT = "Jackthe_ripper_bot"
 TIMEOUT_SECONDS = int(os.environ.get("TIMEOUT_SECONDS", "20"))
-
-# Video storage
-VIDEOS_DIR = Path("downloaded_videos")
-VIDEOS_DIR.mkdir(exist_ok=True)
 
 # ----------------------------
 # Telegram Client
@@ -59,9 +52,6 @@ class AdvancedCCRequest(BaseModel):
     gate_category: str  # 'auth' | 'charge'
     gate_provider: str  # provider code per checker/category
 
-class TeraboxRequest(BaseModel):
-    url: str
-
 async def ensure_client_started():
     if not TELEGRAM_READY:
         raise RuntimeError("Telegram credentials/session missing.")
@@ -74,14 +64,14 @@ async def ensure_client_started():
 # Parser for @Truecaller_sbot
 # Example:
 # ✅ Truecaller Details Revealed.!!
-# ━━━━━━━━━━━━━━━━━━━━━
+# ━━━━━━━━━━━━━━━━━━━━━━
 # 📱  Carrier: Not Found
 # 🌍 Country: Not Found
-# 🌍 International Format: Not Found
+# 🌐 International Format: Not Found
 # 📞 Local Format: Not Found
 # 📍 Location: Not Found
-# 🕑 Timezones: Not Found
-# 📍 Truecaller Name: usman pasha
+# 🕒 Timezones: Not Found
+# 🔍 Truecaller Name: usman pasha
 # 👤 Username: No name found
 # 🔎 Number search: 3
 # ----------------------------
@@ -103,11 +93,11 @@ def parse_sbot_reply(text: str):
 
     out["carrier"] = pick(r"📱\s*Carrier:\s*(.+)")
     out["country"] = pick(r"🌍\s*Country:\s*(.+)")
-    out["international_format"] = pick(r"🌍\s*International\s*Format:\s*(.+)")
+    out["international_format"] = pick(r"🌐\s*International\s*Format:\s*(.+)")
     out["local_format"] = pick(r"📞\s*Local\s*Format:\s*(.+)")
     out["location"] = pick(r"📍\s*Location:\s*(.+)")
-    out["timezones"] = pick(r"🕑\s*Timezones?:\s*(.+)")
-    out["truecaller_name"] = pick(r"📍\s*Truecaller\s*Name:\s*(.+)")
+    out["timezones"] = pick(r"🕒\s*Timezones?:\s*(.+)")
+    out["truecaller_name"] = pick(r"🔍\s*Truecaller\s*Name:\s*(.+)")
     out["username"] = pick(r"👤\s*Username:\s*(.+)")
     out["number_search"] = pick(r"🔎\s*Number\s*search:\s*(\d+)", cast=int)
     out["raw"] = text
@@ -710,222 +700,6 @@ async def cc_check_advanced(req: AdvancedCCRequest):
         raise HTTPException(status_code=502, detail=f"Telegram error: {e}")
 
 # ----------------------------
-# Video Download and Storage Functions
-# ----------------------------
-async def download_video_to_server(video_url: str, video_title: str) -> str:
-    """Download video from URL to server and return local file path"""
-    try:
-        # Generate unique filename
-        file_id = str(uuid.uuid4())
-        file_extension = ".mp4"  # Default extension
-        filename = f"{file_id}{file_extension}"
-        file_path = VIDEOS_DIR / filename
-        
-        # Download video
-        async with aiohttp.ClientSession() as session:
-            async with session.get(video_url, timeout=aiohttp.ClientTimeout(total=300)) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=502, detail=f"Failed to download video: HTTP {response.status}")
-                
-                # Get file size for progress tracking
-                total_size = int(response.headers.get('content-length', 0))
-                
-                # Download and save file
-                async with aiofiles.open(file_path, 'wb') as f:
-                    downloaded = 0
-                    async for chunk in response.content.iter_chunked(8192):
-                        await f.write(chunk)
-                        downloaded += len(chunk)
-                        
-                        # Optional: Add progress logging here if needed
-                        if total_size > 0:
-                            progress = (downloaded / total_size) * 100
-                            # You can emit progress updates here if needed
-        
-        return str(file_path)
-        
-    except Exception as e:
-        # Clean up partial file if it exists
-        if file_path.exists():
-            file_path.unlink()
-        raise HTTPException(status_code=502, detail=f"Error downloading video: {str(e)}")
-
-def get_video_info(file_path: str) -> dict:
-    """Get video file information"""
-    path = Path(file_path)
-    if not path.exists():
-        return None
-    
-    stat = path.stat()
-    return {
-        "filename": path.name,
-        "size": stat.st_size,
-        "created": stat.st_ctime,
-        "path": str(path)
-    }
-
-# ----------------------------
-# Terabox Downloader API
-# ----------------------------
-@app.post("/terabox/download")
-async def terabox_download(req: TeraboxRequest):
-    """
-    Call the Terabox API to get download links for videos
-    """
-    if not req.url:
-        raise HTTPException(status_code=400, detail="Please provide a Terabox URL")
-    
-    # Call the external Terabox API
-    api_url = f"https://wdzone-terabox-api.vercel.app/api?url={req.url}"
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=502, detail=f"Terabox API returned status {response.status}")
-                
-                data = await response.json()
-                
-                # Check if the API returned success
-                if "✅ Status" not in data or data["✅ Status"] != "Success":
-                    raise HTTPException(status_code=502, detail="Failed to extract video information")
-                
-                # Parse and format the response
-                videos = []
-                if "📜 Extracted Info" in data:
-                    for item in data["📜 Extracted Info"]:
-                        video_info = {
-                            "title": item.get("📂 Title", "Unknown"),
-                            "size": item.get("📏 Size", "Unknown"),
-                            "download_link": item.get("🔽 Direct Download Link", ""),
-                            "thumbnails": item.get("🖼️ Thumbnails", {}),
-                            "server_downloaded": False,
-                            "server_path": None
-                        }
-                        videos.append(video_info)
-                
-                return {
-                    "ok": True,
-                    "videos": videos,
-                    "shortlink": data.get("🔗 ShortLink", ""),
-                    "raw_response": data
-                }
-                
-    except asyncio.TimeoutError:
-        raise HTTPException(status_code=504, detail="Timeout while fetching from Terabox API")
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error fetching from Terabox API: {str(e)}")
-
-# ----------------------------
-# Video Download to Server Endpoint
-# ----------------------------
-@app.post("/terabox/download-to-server")
-async def download_video_to_server_endpoint(req: TeraboxRequest):
-    """
-    Download a specific video from Terabox to the server
-    """
-    if not req.url:
-        raise HTTPException(status_code=400, detail="Please provide a Terabox URL")
-    
-    # First get video info from Terabox API
-    api_url = f"https://wdzone-terabox-api.vercel.app/api?url={req.url}"
-    
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(api_url, timeout=aiohttp.ClientTimeout(total=30)) as response:
-                if response.status != 200:
-                    raise HTTPException(status_code=502, detail=f"Terabox API returned status {response.status}")
-                
-                data = await response.json()
-                
-                if "✅ Status" not in data or data["✅ Status"] != "Success":
-                    raise HTTPException(status_code=502, detail="Failed to extract video information")
-                
-                # Get the first video's download link
-                if "📜 Extracted Info" not in data or not data["📜 Extracted Info"]:
-                    raise HTTPException(status_code=404, detail="No videos found")
-                
-                video_info = data["📜 Extracted Info"][0]
-                download_url = video_info.get("🔽 Direct Download Link", "")
-                video_title = video_info.get("📂 Title", "Unknown")
-                
-                if not download_url:
-                    raise HTTPException(status_code=404, detail="No download link available")
-                
-                # Download video to server
-                server_path = await download_video_to_server(download_url, video_title)
-                video_file_info = get_video_info(server_path)
-                
-                return {
-                    "ok": True,
-                    "message": "Video downloaded to server successfully",
-                    "video_info": {
-                        "title": video_title,
-                        "size": video_info.get("📏 Size", "Unknown"),
-                        "server_path": server_path,
-                        "file_info": video_file_info
-                    },
-                    "stream_url": f"/terabox/stream/{Path(server_path).name}"
-                }
-                
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Error downloading video: {str(e)}")
-
-# ----------------------------
-# Video Streaming Endpoint
-# ----------------------------
-@app.get("/terabox/stream/{filename}")
-async def stream_video(filename: str):
-    """
-    Stream a video file from the server
-    """
-    file_path = VIDEOS_DIR / filename
-    
-    if not file_path.exists():
-        raise HTTPException(status_code=404, detail="Video file not found")
-    
-    # Return the video file for streaming
-    return FileResponse(
-        path=str(file_path),
-        media_type="video/mp4",
-        filename=filename,
-        headers={
-            "Accept-Ranges": "bytes",
-            "Cache-Control": "public, max-age=3600"
-        }
-    )
-
-# ----------------------------
-# List Downloaded Videos
-# ----------------------------
-@app.get("/terabox/videos")
-async def list_downloaded_videos():
-    """
-    List all videos downloaded to the server
-    """
-    try:
-        videos = []
-        for file_path in VIDEOS_DIR.glob("*.mp4"):
-            file_info = get_video_info(str(file_path))
-            if file_info:
-                videos.append({
-                    "filename": file_info["filename"],
-                    "size": file_info["size"],
-                    "created": file_info["created"],
-                    "stream_url": f"/terabox/stream/{file_info['filename']}"
-                })
-        
-        return {
-            "ok": True,
-            "videos": videos,
-            "count": len(videos)
-        }
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error listing videos: {str(e)}")
-
-# ----------------------------
 # Health
 # ----------------------------
 @app.get("/health")
@@ -936,3 +710,52 @@ async def health():
 # Static frontend (mount LAST so /lookup isn't shadowed)
 # ----------------------------
 app.mount("/", StaticFiles(directory="static", html=True), name="static")
+
+# ----------------------------
+# Terabox minimal API: info + proxy stream
+# ----------------------------
+
+TERABOX_API = "https://wdzone-terabox-api.vercel.app/api"
+
+@app.get("/terabox/info")
+async def terabox_info(url: str):
+    if not url:
+        raise HTTPException(status_code=400, detail="Missing url")
+    # Call third-party API to get extracted info
+    params = {"url": url}
+    try:
+        async with httpx.AsyncClient(timeout=20) as client_http:
+            r = await client_http.get(TERABOX_API, params=params)
+            if r.status_code >= 400:
+                raise HTTPException(status_code=502, detail=f"Terabox API error: {r.text[:200]}")
+            data = r.json()
+    except httpx.HTTPError as e:
+        raise HTTPException(status_code=502, detail=f"HTTP error: {e}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    return data
+
+@app.get("/terabox/stream")
+async def terabox_stream(direct: str):
+    if not direct:
+        raise HTTPException(status_code=400, detail="Missing direct link")
+
+    # Stream bytes from the direct link to the client without storing
+    async def byte_iter():
+        try:
+            async with httpx.AsyncClient(timeout=None, follow_redirects=True) as client_http:
+                async with client_http.stream("GET", direct, headers={
+                    # Some CDNs require a user-agent
+                    "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"
+                }) as resp:
+                    status = resp.status_code
+                    if status >= 400:
+                        text = await resp.aread()
+                        raise HTTPException(status_code=502, detail=f"Upstream error: {text[:200].decode(errors='ignore')}")
+                    async for chunk in resp.aiter_bytes():
+                        if chunk:
+                            yield chunk
+        except httpx.HTTPError as e:
+            raise HTTPException(status_code=502, detail=f"HTTP error: {e}")
+
+    return StreamingResponse(byte_iter(), media_type="video/mp4")
