@@ -140,6 +140,19 @@
             display: block;
         }
 
+        .success-message {
+            display: none;
+            background: #c6f6d5;
+            color: #22543d;
+            padding: 15px;
+            border-radius: 8px;
+            margin-top: 15px;
+        }
+
+        .success-message.show {
+            display: block;
+        }
+
         .results {
             display: none;
             margin-top: 30px;
@@ -322,6 +335,7 @@
             </div>
 
             <div id="error" class="error-message"></div>
+            <div id="success" class="success-message"></div>
 
             <div id="results" class="results"></div>
         </div>
@@ -440,11 +454,11 @@
             const actions = document.createElement('div');
             actions.className = 'video-actions';
             
-            // Stream button
+            // Stream button (download to server first)
             const streamBtn = document.createElement('button');
             streamBtn.className = 'btn-action btn-stream';
             streamBtn.innerHTML = '▶️ Stream Video';
-            streamBtn.onclick = () => streamVideo(video.download_link, index);
+            streamBtn.onclick = () => downloadAndStreamVideo(video.download_link, video.title, index);
             actions.appendChild(streamBtn);
             
             // Download button
@@ -465,6 +479,70 @@
             card.appendChild(playerDiv);
             
             return card;
+        }
+
+        async function downloadAndStreamVideo(url, title, index) {
+            if (!url) {
+                showError('No download URL available');
+                return;
+            }
+            
+            const playerDiv = document.getElementById(`player-${index}`);
+            
+            // Toggle player visibility
+            if (playerDiv.classList.contains('show')) {
+                playerDiv.classList.remove('show');
+                playerDiv.innerHTML = '';
+                return;
+            }
+            
+            // Hide all other players
+            document.querySelectorAll('.video-player').forEach(p => {
+                p.classList.remove('show');
+                p.innerHTML = '';
+            });
+            
+            // Show loading in player div
+            playerDiv.innerHTML = '<div style="text-align: center; padding: 40px; color: #667eea;"><div class="spinner"></div><p style="margin-top: 15px;">Downloading video to server...</p></div>';
+            playerDiv.classList.add('show');
+            playerDiv.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            
+            try {
+                // Download video to server
+                const response = await fetch('/terabox/download-to-server', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url: url })
+                });
+                
+                const data = await response.json();
+                
+                if (!response.ok) {
+                    throw new Error(data.detail || 'Failed to download video to server');
+                }
+                
+                if (data.ok && data.stream_url) {
+                    // Create and show video player with server stream
+                    const video = document.createElement('video');
+                    video.controls = true;
+                    video.autoplay = true;
+                    video.src = data.stream_url;
+                    
+                    playerDiv.innerHTML = '';
+                    playerDiv.appendChild(video);
+                    
+                    // Show success message briefly
+                    showSuccess(`Video downloaded and ready to stream!`);
+                } else {
+                    throw new Error('No stream URL received from server');
+                }
+                
+            } catch (error) {
+                playerDiv.innerHTML = `<div style="text-align: center; padding: 40px; color: #c53030;"><p>❌ Error: ${error.message}</p></div>`;
+                showError('Failed to download video: ' + error.message);
+            }
         }
 
         function streamVideo(url, index) {
@@ -521,12 +599,31 @@
             const errorDiv = document.getElementById('error');
             errorDiv.textContent = message;
             errorDiv.classList.add('show');
+            hideSuccess();
         }
 
         function hideError() {
             const errorDiv = document.getElementById('error');
             errorDiv.classList.remove('show');
             errorDiv.textContent = '';
+        }
+
+        function showSuccess(message) {
+            const successDiv = document.getElementById('success');
+            successDiv.textContent = message;
+            successDiv.classList.add('show');
+            hideError();
+            
+            // Auto-hide success message after 3 seconds
+            setTimeout(() => {
+                hideSuccess();
+            }, 3000);
+        }
+
+        function hideSuccess() {
+            const successDiv = document.getElementById('success');
+            successDiv.classList.remove('show');
+            successDiv.textContent = '';
         }
 
         function hideResults() {
