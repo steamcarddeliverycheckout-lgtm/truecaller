@@ -2,5 +2,4 @@ fastapi
 uvicorn[standard]
 telethon
 pydantic
-aiohttp
-aiofiles
+httpx
